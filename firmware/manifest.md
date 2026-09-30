@@ -106,6 +106,26 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic-clear_hid-ptt / v0.6（修正：改用真正的板载 LED GP25）
+
+> 分支：`mic-clear_hid-ptt`。v0.5 的 LED 用的是 WS2812(GP16)，在标准 Pico 上**无效果**；v0.6 改为驱动**真正的板载 LED（GP25 / `PICO_DEFAULT_LED_PIN`）**，参考官方示例 `pico-examples/blink/blink.c`。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v0.6.uf2` / `i2s_mic_mic_hid_v0.6.elf` |
+| 版本 | 0.6（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `8fae2dbc0e7e7f7358216ab856937b94b452920d130448167d3e161186f1cfa2` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 复合设备 | UAC2 麦克风（EP 0x81）+ HID 键盘（EP 0x82），`CFG_TUD_HID=1` |
+| 板载 LED | **GP25**（`PICO_DEFAULT_LED_PIN`，普通 GPIO 直接驱动；Pico W 用 CYW43 的 WL_GPIO0，代码 `#if` 兼容） |
+| 触发引脚 | **GP2**（输入 + 内部上拉，接地 = 低电平） |
+| 状态逻辑 | 上电默认常亮 → GP2 接地：**100ms 半周期高频闪烁** → GP2 断开：恢复常亮 |
+| 变更 | 相对 v0.5：新增 `led.c/led.h` 的 `led_onboard_init()/led_onboard_set()`（GP25 直接 GPIO，参考官方 blink）；`main.c` 在常亮/闪烁处调用；保留 WS2812(GP16) 兼容。版本 0.5→0.6 |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

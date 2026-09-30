@@ -107,23 +107,28 @@ cmake --build build_mic_hid
 
 ---
 
-## 八、v0.5 新增：GP2 控制板载 LED（常亮 / 高频闪烁）
+## 八、v0.6：GP2 控制板载 LED（常亮 / 高频闪烁）——改用真正的板载 LED
+
+**背景**：v0.5 用的是 WS2812 数据线 GP16（原工程遗留），在标准 Raspberry Pi Pico 上**无效果**——标准 Pico 的板载 LED 是 **GP25**（普通 GPIO）。v0.6 按官方示例 `pico-examples/blink/blink.c` 重构为直接驱动板载 LED。
 
 **引脚配置**
-- 板载 LED：WS2812 数据线 = **GP16**（PIO0 SM0，800 kHz，见 `led.c`）；亮灭沿用 `led_set_color()`。
-- 触发引脚：**GP2**（宏 `GPIO_PTT`，输入 + 内部上拉；外部按钮另一端接 GND）。与 PTT 复用同一输入，仅读取、不冲突。
+- 板载 LED：**GP25**（`PICO_DEFAULT_LED_PIN`，普通 GPIO 直接驱动；Pico W 为 CYW43 的 `WL_GPIO0`，代码用 `#if` 兼容）。见 `led.c` 的 `led_onboard_init()` / `led_onboard_set()`。
+- 触发引脚：**GP2**（宏 `GPIO_PTT`，输入 + 内部上拉；按钮另一端接 GND）。与 PTT 复用同一输入，仅读取、不冲突。
+- 兼容：仍保留 WS2812(GP16) 驱动（`led_set_color()`），板上有该灯时同样亮。
 
 **状态切换逻辑**（`main.c` 的 `led_blinking_task()`）
-- 上电默认：**常亮**（蓝 `(0,0,140)`；静音时偏红 `(120,0,140)`）。
-- GP2 接地（低电平）：进入**高频闪烁**，每 `LED_BLINK_FAST_MS = 100ms` 翻转一次（≈5Hz）：亮=蓝、灭=熄。
+- 上电默认：**常亮**（`led_onboard_init()` 里 `gpio_put(GP25, 1)`；WS2812 蓝 `(0,0,140)`）。
+- GP2 接地（低电平）：**高频闪烁**，每 `LED_BLINK_FAST_MS = 100ms` 翻转一次（≈5Hz），`gpio_put(GP25, on)`。
 - GP2 断开（回到高电平）：**立即恢复常亮**。
-- 判定用 `gpio_get(GPIO_PTT)`；`prev_ptt` 记录上次状态做边沿检测（进入闪烁时复位计时）；`next_ms` 控制翻转节奏；常亮态只在需要时刷新一次，避免每圈重刷 WS2812。
+- 判定用 `gpio_get(GPIO_PTT)`；`prev_ptt` 做边沿检测（进入闪烁时复位计时）；`next_ms` 控节奏；常亮态只在需要时刷新一次。
 
 真值表：
 
-| GP2 电平 | LED 表现 |
+| GP2 电平 | 板载 LED(GP25) 表现 |
 |---|---|
 | 高（与 GND 断开） | 常亮 |
 | 低（接到 GND） | 高频闪烁（100ms 半周期，≈5Hz） |
 
-对应固件：`firmware/i2s_mic_mic_hid_v0.5.uf2`（版本 0.5）。
+对应固件：`firmware/i2s_mic_mic_hid_v0.6.uf2`（版本 0.6）。
+
+> 参考官方示例：<https://github.com/raspberrypi/pico-examples/blob/master/blink/blink.c>

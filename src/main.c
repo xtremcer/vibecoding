@@ -67,6 +67,7 @@ int main(void)
 
     board_init();
     led_init();
+    led_onboard_init();   // 板载 LED（标准 Pico=GP25）初始化，上电默认常亮
 
     for (int i = 0; i < 3; i++) {
         volume[i] = 255; // max volume
@@ -450,10 +451,11 @@ void led_blinking_task(void)
     uint32_t now = board_millis();
 
     if (!ptt) {
-        // 默认：常亮。仅在需要点亮时刷新一次，避免每圈都重刷 WS2812
+        // 默认：常亮。仅在需要点亮时刷新一次，避免每圈都重刷
         if (!led_on || prev_ptt) {
             led_on = true;
-            led_set_color(r, 0, b);
+            led_onboard_set(true);   // 板载 LED（GP25）常亮
+            led_set_color(r, 0, b);  // WS2812（若板上有）
         }
         next_ms = now;      // 复位闪烁计时，便于下次触发立即开始
         prev_ptt = false;
@@ -470,7 +472,8 @@ void led_blinking_task(void)
     }
     next_ms = now + LED_BLINK_FAST_MS;
     led_on = !led_on;
-    led_set_color(led_on ? r : 0, 0, led_on ? b : 0);
+    led_onboard_set(led_on);                          // 板载 LED（GP25）闪烁
+    led_set_color(led_on ? r : 0, 0, led_on ? b : 0); // WS2812（若板上有）
 }
 
 //--------------------------------------------------------------------+
