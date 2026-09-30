@@ -1,4 +1,8 @@
 #include "led.h"
+#include "buttons.h"
+#include "status_led.h"
+#include "oled.h"
+#include "beep.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,6 +16,8 @@
 #include "rec_buffer.h"
 #include "tusb.h"
 #include "tusb_config.h"
+#include "class/hid/hid_device.h"   // HID device API：tud_hid_keyboard_report / tud_hid_ready / HID_KEY_*
+#include "hardware/gpio.h"   // GP2 按键输入
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
@@ -54,6 +60,7 @@ int main(void)
 
     board_init();
     led_init();
+    led_onboard_init();   // 板载 LED（标准 Pico=GP25）初始化，上电默认常亮
 
     for (int i = 0; i < 3; i++) {
         volume[i] = 255; // max volume
@@ -71,6 +78,12 @@ int main(void)
         board_init_after_tusb();
     }
 
+    buttons_init();      // 初始化所有按键引脚（输入 + 内部上拉），见 buttons.c
+    status_led_init();   // 额外状态灯 busy(GP26)/plan(GP27)/idle(GP28)
+    oled_init();         // OLED I2C1（SDA=GP10 / SCL=GP11）
+    beep_init();         // 蜂鸣器 GP14（需三极管/MOS 驱动）
+    status_led_set(LED_IDLE, true);   // 上电默认：idle 灯亮（预留示例）
+
     rec_init();
 
     sampFreq = AUDIO_SAMPLE_RATE;
@@ -85,6 +98,9 @@ int main(void)
         tud_task();
         led_blinking_task();
         audio_task();
+        buttons_task();   // 自定义按键模块（去抖 + 组合键上报）
+        beep_task();      // 蜂鸣器计时（beep_ms）
+        status_led_set(LED_BUSY, !gpio_get(PIN_PTT));   // 预留示例：PTT 按下 → busy 灯亮
     }
 }
 
@@ -415,26 +431,57 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const*
 }
 
 //--------------------------------------------------------------------+
-// BLINKING TASK
+// LED 任务：默认常亮；GP2 接地(低电平)时高频闪烁；断开后恢复常亮
 //--------------------------------------------------------------------+
+#define LED_BLINK_FAST_MS 50    // 高频闪烁的半周期(ms)，50ms ≈ 10Hz
+
 void led_blinking_task(void)
 {
-    static uint32_t start_ms = 0;
-    static bool led_state = false;
+    static uint32_t next_ms = 0;    // 下一次闪烁翻转的时刻
+    static bool led_on = false;     // 当前 LED 亮灭
+    static bool prev_ptt = false;   // 上一次的 GP2 状态
 
-    if (board_millis() - start_ms < blink_interval_ms)
-        return; // not enough time
+    uint8_t r = is_muted() ? 120 : 0; // 静音时偏红，否则纯蓝
+    const uint8_t b = 140;
 
-    start_ms += blink_interval_ms;
+    bool ptt = !gpio_get(PIN_PTT);    // PTT 键接地 = 低电平 = 触发
+    uint32_t now = board_millis();
 
-    uint8_t r = is_muted() ? 120 : 0;
-    uint8_t g = 0;
-
-    if (led_state) {
-        led_set_color(r, g, 140);
-    } else {
-        led_set_color(r, g, 0);
+    if (!ptt) {
+        // 默认：常亮。仅在需要点亮时刷新一次，避免每圈都重刷
+        if (!led_on || prev_ptt) {
+            led_on = true;
+            led_onboard_set(true);   // 板载 LED（GP25）常亮
+            led_set_color(r, 0, b);  // WS2812（若板上有）
+        }
+        next_ms = now;      // 复位闪烁计时，便于下次触发立即开始
+        prev_ptt = false;
+        return;
     }
 
-    led_state = 1 - led_state; // toggle
+    // GP2 接地：高频闪烁
+    if (!prev_ptt) {        // 刚进入闪烁：立即复位计时
+        next_ms = now;
+        prev_ptt = true;
+    }
+    if ((int32_t)(now - next_ms) < 0) {
+        return;             // 未到下一个闪烁时刻
+    }
+    next_ms = now + LED_BLINK_FAST_MS;
+    led_on = !led_on;
+    led_onboard_set(led_on);                          // 板载 LED（GP25）闪烁
+    led_set_color(led_on ? r : 0, 0, led_on ? b : 0); // WS2812（若板上有）
+}
+
+//--------------------------------------------------------------------+
+// 自定义按键（去抖 + 组合键上报）已抽到独立模块：src/buttons.c / buttons.h
+//   映射表 btn_configs[] 在 buttons.c，未来用户自由组合设定只需改那张表。
+//--------------------------------------------------------------------+
+
+// 报告发送完成回调（保留，避免未定义弱符号告警）
+void tud_hid_report_sent_cb(uint8_t instance, uint8_t const* report, uint8_t len)
+{
+    (void)instance;
+    (void)report;
+    (void)len;
 }

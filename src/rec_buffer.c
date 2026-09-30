@@ -76,10 +76,15 @@ void rec_init()
 
 __attribute__((aligned(8))) uint8_t usb_buffer[USB_AUDIO_BUFFER_LEN * 3];
 
-// 透明透传（与原始 stereo_mic-master 工程一致）：
-// I2S 缓冲为 L0,R0,L1,R1,... 共 USB_AUDIO_BUFFER_LEN 个 24-bit 样本，原样送往 USB。
-// 单颗 INMP441（L/R 接地=左声道）时，左声道槽有有效数据、右声道槽为麦克风三态读出的无效值。
-// 说明：volume（软件增益）当前未生效，仅 mute 真正生效（与原始工程一致）。
+// 单颗 INMP441（L/R 接地=左声道模式）：I2S 缓冲布局为 L0,R0,L1,R1,... 共 USB_AUDIO_BUFFER_LEN 个 24-bit 样本。
+// 只接一颗麦时，未被驱动的那个槽（实测多为奇数字/右槽）是三态浮空的无效值；若直接当有效音频送出，
+//   会一边无声/单边发声，且浮空噪声混入 → 原 mic 音质差的根因。
+// 修复（见下方 rec_take）：同时抽出左右两槽、各自 >>8 取 24-bit，比较绝对值取"有声的那一侧"，
+//   再复制成双声道输出。这样既隔离浮空底噪（音质提升），又让左右都出声，且不依赖手动指定左右槽。
+// 关键：原始 mic 用 raw>>8 能跑通（有声），说明 FIFO 字实际布局是 bit31:8 已是 24-bit 数据
+// （I2S 1-bit 延迟位已被 PIO 吞掉 / INMP441 左对齐），直接算术右移 8 即正确抽取、符号也正确。
+// 曾错误地加 <<1 想“跳过延迟位”，结果把已对齐的数据推到 bit31 溢出 → 输出全 0 → 完全不拾音，已撤回。
+// 说明：volume（软件增益）当前未生效，仅 mute 真正生效（与原始工程一致）；采集/时钟/USB 全未改动。
 uint8_t* rec_take(uint8_t mute, uint8_t volume)
 {
     (void)volume; // 软件增益未实现，保持与原始工程一致
@@ -91,7 +96,13 @@ uint8_t* rec_take(uint8_t mute, uint8_t volume)
     int32_t* buf = audio_buffers[buffer_pos];
 
     for (size_t i = 0; i < USB_AUDIO_BUFFER_LEN; i++) {
-        int32_t v = (buf[i] >> 8); // 32-bit 容器内的 24-bit 样本（高 24 位有效）
+        // 单麦只一个槽有有效音频：同时抽出左右两槽的 24-bit，取绝对值更大者（有声侧），复制成双声道。
+        // 这样无论硬件实际是左槽还是右槽在响，都能自动选对，避免手动选错槽导致静音。
+        int32_t lv = buf[i & ~1u] >> 8;     // 偶数索引槽抽出的 24-bit
+        int32_t rv = buf[i |  1u] >> 8;     // 奇数索引槽抽出的 24-bit
+        int32_t lmag = (lv < 0) ? -lv : lv; // 绝对值
+        int32_t rmag = (rv < 0) ? -rv : rv;
+        int32_t v = (rmag > lmag) ? rv : lv; // 选有声音的那一侧
         usb_buffer[i * 3 + 0] = (uint8_t)(v & 0xFF);
         usb_buffer[i * 3 + 1] = (uint8_t)((v >> 8) & 0xFF);
         usb_buffer[i * 3 + 2] = (uint8_t)((v >> 16) & 0xFF);
