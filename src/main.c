@@ -68,7 +68,7 @@ static const hid_button_t hid_buttons[] = {
     {  3, 0x00, 0x29 }, // GP3  Esc
     {  4, 0x01, 0x04 }, // GP4  Ctrl + A
     {  5, 0x01, 0x06 }, // GP5  Ctrl + C
-    // {  6, 0x01, 0x19 }, // GP6  Ctrl + V  —— 暂注释：GP6 与 I²S dout_pin(=6) 冲突（被 I²S 拉低），先禁用
+    { 20, 0x01, 0x19 }, // GP20 Ctrl + V（改到空闲脚，避开与 I²S dout_pin=6 的冲突）
     { 12, 0x01, 0x0F }, // GP12 Ctrl + L
     { 13, 0x08, 0x31 }, // GP13 Win + '\'
 };
@@ -496,24 +496,30 @@ void led_blinking_task(void)
 }
 
 //--------------------------------------------------------------------+
-// HID 按键任务：把 GP2/GP0/GP1/GP3/GP4/GP5/GP6/GP12/GP13 的按下状态汇总成
-// 一个键盘报告发送（低电平=按下，内部上拉）。支持多键同时按下。
+// HID 按键任务：把各按键脚的按下状态汇总成一个键盘报告发送（低电平=按下，内部上拉）。
+// 支持多键同时按下。采用"真去抖"：原始电平需稳定 HID_DEBOUNCE_MS 才改变有效状态；
+// 避免长按时触点抖动被误判为"松开"——尤其 Win 组合键被误松开会弹出 Windows 开始菜单。
 //--------------------------------------------------------------------+
-static bool btn_pressed[HID_BUTTON_COUNT];       // 去抖后的按下状态
-static uint32_t btn_change_ms[HID_BUTTON_COUNT]; // 上次状态变化时刻
-static uint8_t last_modifier = 0;                // 上次上报的修饰键
-static uint8_t last_keycode[6] = {0};            // 上次上报的键码
+#define HID_DEBOUNCE_MS 20                            // 去抖时间(ms)：原始电平需稳定这么久才生效
+
+static bool btn_raw[HID_BUTTON_COUNT];                // 原始采样状态
+static bool btn_pressed[HID_BUTTON_COUNT];            // 去抖后的有效状态
+static uint32_t btn_raw_change_ms[HID_BUTTON_COUNT];  // 原始状态上次变化时刻
+static uint8_t last_modifier = 0;                     // 上次上报的修饰键
+static uint8_t last_keycode[6] = {0};                 // 上次上报的键码
 
 void hid_task(void)
 {
     uint32_t now = board_millis();
 
-    // 1) 采样 + 去抖（10ms 稳定）
+    // 1) 采样 + 真去抖：原始电平稳定 HID_DEBOUNCE_MS 后才更新有效状态
     for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        bool pressed = !gpio_get(hid_buttons[i].pin); // 接地=低电平=按下
-        if (pressed != btn_pressed[i] && (now - btn_change_ms[i]) > 10) {
-            btn_change_ms[i] = now;
-            btn_pressed[i] = pressed;
+        bool raw = !gpio_get(hid_buttons[i].pin); // 接地=低电平=按下
+        if (raw != btn_raw[i]) {
+            btn_raw[i] = raw;
+            btn_raw_change_ms[i] = now;           // 记录原始状态变化时刻
+        } else if (btn_pressed[i] != raw && (now - btn_raw_change_ms[i]) >= HID_DEBOUNCE_MS) {
+            btn_pressed[i] = raw;                 // 稳定足够久 → 生效
         }
     }
 

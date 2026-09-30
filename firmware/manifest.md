@@ -181,6 +181,24 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led / v1.0（Ctrl+V 改到 GP20；按键改真去抖）
+
+> 分支：`mic_ptt_led`。Ctrl+V 从冲突的 GP6 改到空闲脚 **GP20**；按键改为**真去抖**（原始电平稳定 20ms 才生效），解决 GP13(Win+\) **长按时误弹 Windows 开始菜单**的问题。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.0.uf2` / `i2s_mic_mic_hid_v1.0.elf` |
+| 版本 | 1.0（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `6481b35cf017c64282f14d596893e19b343dd974aab75a7fc0277e4b577cd66f` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 按键映射 | GP0=Enter、GP1=Backspace、GP2=PTT(Win+`)、GP3=Esc、GP4=Ctrl+A、GP5=Ctrl+C、**GP20=Ctrl+V**、GP12=Ctrl+L、GP13=Win+\ |
+| 变更 | GP6 不再做按键（留给 I²S dout）；Ctrl+V 由 GP6→GP20；`hid_task()` 改**真去抖**（`HID_DEBOUNCE_MS=20`：原始电平稳定 20ms 才更新有效状态，防长按触点抖动误判松开）。版本 0.9→1.0 |
+| 备注 | **未 push 到 GitHub**（用户要求仅本地提交） |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
