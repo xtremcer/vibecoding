@@ -163,6 +163,24 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led / v0.9（暂禁用 GP6/Ctrl+V 映射，用于测试其余按键）
+
+> 分支：`mic_ptt_led`。**GP6 与 I²S `dout_pin(=6)` 冲突**：I²S 的 out-master 状态机把 GP6 配置为输出并拉低，导致 GP6 按键被当成常按 → Ctrl+V 无限触发。本版先注释掉 GP6 映射以测试其余按键。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v0.9.uf2` / `i2s_mic_mic_hid_v0.9.elf` |
+| 版本 | 0.9（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `93385f161d57ce94ac03b286581a5d6874dd1a5d2892d4db1b3c7902b14af5fa` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 按键映射 | 保留 GP0=Enter、GP1=Backspace、GP2=PTT(Win+`)、GP3=Esc、GP4=Ctrl+A、GP5=Ctrl+C、GP12=Ctrl+L、GP13=Win+\；**GP6=Ctrl+V 已注释禁用** |
+| 变更 | `main.c` 注释掉 `hid_buttons[]` 中 GP6 行（GP6 与 I²S dout_pin=6 冲突）。版本 0.8→0.9 |
+| 待办 | 彻底修复：把 `rec_buffer.c` 的 `my_i2s_config` 里 `dout_pin` 由 6 改为空闲脚（如 GP14），再恢复 GP6 映射 |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

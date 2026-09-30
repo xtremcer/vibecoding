@@ -68,7 +68,7 @@ static const hid_button_t hid_buttons[] = {
     {  3, 0x00, 0x29 }, // GP3  Esc
     {  4, 0x01, 0x04 }, // GP4  Ctrl + A
     {  5, 0x01, 0x06 }, // GP5  Ctrl + C
-    {  6, 0x01, 0x19 }, // GP6  Ctrl + V
+    // {  6, 0x01, 0x19 }, // GP6  Ctrl + V  —— 暂注释：GP6 与 I²S dout_pin(=6) 冲突（被 I²S 拉低），先禁用
     { 12, 0x01, 0x0F }, // GP12 Ctrl + L
     { 13, 0x08, 0x31 }, // GP13 Win + '\'
 };
