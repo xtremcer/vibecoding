@@ -262,7 +262,8 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 | 新增模块 | `status_led.c/.h`（busy=GP26 / plan=GP27 / idle=GP28）；`oled.c/.h`（I2C1 SDA=GP10 / SCL=GP11）；`beep.c/.h`（GP14，需三极管/MOS） |
 | 变更 | `main.c` 增加三个模块的 init 与主循环调用（含 idle/busy 灯示例）；CMake 增加 3 个 `.c`；版本 1.3→1.4 |
 | 文档 | `doc/10_预留模块说明.md` |
-| 备注 | **未 push 到 GitHub**（用户要求仅本地提交） |
+| 已知问题 | **Win 组合键触发仍有细微 bug**（GP13=Win+反斜杠 一键脉冲 / GP2 PTT=Win+反引号），待排查（疑与脉冲时序或 Windows 对长按 Win 的处理有关） |
+| 备注 | 已 push 到 GitHub（分支 `mic_ptt_led_key-m_BEEP-LED`） |
 
 ---
 
