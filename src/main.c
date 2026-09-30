@@ -436,7 +436,7 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const*
 //--------------------------------------------------------------------+
 // LED 任务：默认常亮；GP2 接地(低电平)时高频闪烁；断开后恢复常亮
 //--------------------------------------------------------------------+
-#define LED_BLINK_FAST_MS 100   // 高频闪烁的半周期(ms)，100ms ≈ 5Hz
+#define LED_BLINK_FAST_MS 50    // 高频闪烁的半周期(ms)，50ms ≈ 10Hz
 
 void led_blinking_task(void)
 {

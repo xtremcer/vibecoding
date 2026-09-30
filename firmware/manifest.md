@@ -126,6 +126,24 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic-clear_hid-ptt / v0.7（LED 闪烁频率加倍）
+
+> 分支：`mic-clear_hid-ptt`。高频闪烁半周期 100ms→50ms（≈5Hz→≈10Hz），闪烁快一倍。其余同 v0.6（板载 LED GP25 + GP2 触发）。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v0.7.uf2` / `i2s_mic_mic_hid_v0.7.elf` |
+| 版本 | 0.7（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `9bf1489a0d1cb481feabfa0d073bfd231709d05134fa829defaeaad751fc349c` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 板载 LED | GP25（`PICO_DEFAULT_LED_PIN`） |
+| 触发引脚 | GP2（接地=低电平） |
+| 变更 | `main.c` 的 `LED_BLINK_FAST_MS` 100→50（闪烁频率 ×2）；版本 0.6→0.7 |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
