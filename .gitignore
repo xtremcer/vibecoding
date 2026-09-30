@@ -1,0 +1,42 @@
+# ---- 构建产物（不入库）----
+build*/
+CMakeCache.txt
+CMakeFiles/
+compile_commands.json
+*.o
+*.obj
+*.d
+
+# ---- 固件：仅 firmware/ 下带版本号的入库；构建目录里散落的不入库 ----
+build*/*.uf2
+build*/*.elf
+build*/*.bin
+build*/*.hex
+build*/*.map
+build*/*.dis
+
+# ---- 参考工程里散落的固件产物（正式固件统一放 firmware/ 并按版本号管理）----
+assets/reference/**/*.uf2
+assets/reference/**/*.elf
+assets/reference/**/*.bin
+assets/reference/**/*.hex
+
+# ---- 工具链大包（体积数百 MB，不入库；用 tools/install_deps.ps1 重新下载）----
+tools/*.zip
+tools/*.tar.gz
+tools/toolchain/
+tools/cmake/
+tools/ninja/
+tools/pico-sdk-tools/
+tools/picotool/
+
+# ---- 编辑器 / 系统 ----
+.vs/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# ---- 本机工作区元数据 ----
+.workbuddy-ai/
