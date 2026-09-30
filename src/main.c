@@ -1,5 +1,8 @@
 #include "led.h"
 #include "buttons.h"
+#include "status_led.h"
+#include "oled.h"
+#include "beep.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -75,7 +78,11 @@ int main(void)
         board_init_after_tusb();
     }
 
-    buttons_init();   // 初始化所有按键引脚（输入 + 内部上拉），见 buttons.c
+    buttons_init();      // 初始化所有按键引脚（输入 + 内部上拉），见 buttons.c
+    status_led_init();   // 额外状态灯 busy(GP26)/plan(GP27)/idle(GP28)
+    oled_init();         // OLED I2C1（SDA=GP10 / SCL=GP11）
+    beep_init();         // 蜂鸣器 GP14（需三极管/MOS 驱动）
+    status_led_set(LED_IDLE, true);   // 上电默认：idle 灯亮（预留示例）
 
     rec_init();
 
@@ -92,6 +99,8 @@ int main(void)
         led_blinking_task();
         audio_task();
         buttons_task();   // 自定义按键模块（去抖 + 组合键上报）
+        beep_task();      // 蜂鸣器计时（beep_ms）
+        status_led_set(LED_BUSY, !gpio_get(PIN_PTT));   // 预留示例：PTT 按下 → busy 灯亮
     }
 }
 

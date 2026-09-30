@@ -249,6 +249,23 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led_key-m_BEEP-LED / v1.4（新增预留模块：状态灯 / OLED / 蜂鸣器）
+
+> 分支：`mic_ptt_led_key-m_BEEP-LED`。新增 3 个独立外设模块（只预留接口，便于后续实现）。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.4.uf2` / `i2s_mic_mic_hid_v1.4.elf` |
+| 版本 | 1.4（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `d6589b5a5c48af97cffa08981322212a11e13af11a4f5857649e97f966117643` |
+| 新增模块 | `status_led.c/.h`（busy=GP26 / plan=GP27 / idle=GP28）；`oled.c/.h`（I2C1 SDA=GP10 / SCL=GP11）；`beep.c/.h`（GP14，需三极管/MOS） |
+| 变更 | `main.c` 增加三个模块的 init 与主循环调用（含 idle/busy 灯示例）；CMake 增加 3 个 `.c`；版本 1.3→1.4 |
+| 文档 | `doc/10_预留模块说明.md` |
+| 备注 | **未 push 到 GitHub**（用户要求仅本地提交） |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
