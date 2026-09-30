@@ -26,21 +26,6 @@ int audio_data_ready()
 static __attribute__((aligned(8))) uint8_t zero_buffer[USB_AUDIO_BUFFER_LEN * 3];
 static __attribute__((aligned(8))) int32_t audio_buffers[USB_AUDIO_BUFFERS][USB_AUDIO_BUFFER_LEN];
 
-// 实际硬件接线（RP2040 Pico + 单颗 INMP441，L/R 接地 => 左声道模式）：
-//   Pin10 = GP7  -> SD   麦克风数据
-//   Pin11 = GP8  -> SCK/BCK
-//   Pin12 = GP9  -> WS/LRCLK
-//   Pin36 = 3V3 (VCC)，Pin18 = GND（INMP441 的 L/R 也接 GND）
-//
-// 硬约束：clock_pin_base 必须等于 din_pin+1，且三者连续 ——
-//   i2s_in_slave   按 din / din+1 / din+2 读引脚（SD / BCK / LRCLK）
-//   i2s_out_master 在 base / base+1 产生时钟（BCK / LRCLK）
-// 两者共用 BCK/LRCLK，所以 SD 必须是这组 GPIO 里编号最小的那个。
-// 顺序固定为 SD(最小) -> SCK -> WS，接反会完全采不到声音。
-//
-// sck_pin=10、dout_pin=6 在 sck_enable=false（仅接收）下未使用，保持原值即可。
-// I²S 引脚固定为实际硬件接线（GP7/8/9），不再提供备用板型（GP18/19/20 已舍弃）。
-// PIO 硬约束：clock_pin_base == din_pin+1，且三者连续 —— SCK=GP8、WS=GP9 由 GP7 推导。
 static i2s_config my_i2s_config = { 48000, 256, 32, 10, 6, 7, 8, false };
 
 static void process_audio(const int32_t* input, int32_t* output, size_t num_frames)
@@ -76,22 +61,51 @@ void rec_init()
 
 __attribute__((aligned(8))) uint8_t usb_buffer[USB_AUDIO_BUFFER_LEN * 3];
 
-// 透明透传（与原始 stereo_mic-master 工程一致）：
-// I2S 缓冲为 L0,R0,L1,R1,... 共 USB_AUDIO_BUFFER_LEN 个 24-bit 样本，原样送往 USB。
-// 单颗 INMP441（L/R 接地=左声道）时，左声道槽有有效数据、右声道槽为麦克风三态读出的无效值。
-// 说明：volume（软件增益）当前未生效，仅 mute 真正生效（与原始工程一致）。
+// static float phase = 0.0f; // persistent phase between calls
+
 uint8_t* rec_take(uint8_t mute, uint8_t volume)
 {
-    (void)volume; // 软件增益未实现，保持与原始工程一致
     if (audio_buffer_items == 0 || mute) {
         return zero_buffer;
     }
 
+    // memset(usb_buffer, 0x45, USB_AUDIO_BUFFER_LEN * 4);
+
+    // const float freq = 100.0f;
+    // const float rate = 48000.0f;
+    // const float inc = freq / rate;
+
     int buffer_pos = (audio_buffer_write_index + USB_AUDIO_BUFFERS - audio_buffer_items) % USB_AUDIO_BUFFERS;
     int32_t* buf = audio_buffers[buffer_pos];
 
+    // float gain = powf((float)volume / 255.0f, 2.2f);
+
     for (size_t i = 0; i < USB_AUDIO_BUFFER_LEN; i++) {
-        int32_t v = (buf[i] >> 8); // 32-bit 容器内的 24-bit 样本（高 24 位有效）
+        // float s = 2.0f * phase - 1.0f;
+        // phase += inc;
+        // if (phase >= 1.0f)
+        //     phase -= 1.0f;
+
+        // int32_t left = (int32_t)(s * 0x7FFFFF * 1.0f);
+        // int32_t right = 0x3FFFFF;
+
+        // uint32_t vl = (uint32_t)(left & 0x00FFFFFF);
+        // uint32_t vr = (uint32_t)(right & 0x00FFFFFF);
+
+        // size_t idxL = (i) * 3; /* left sample byte base */
+        // size_t idxR = (i + 1) * 3; /* right sample byte base */
+
+        // usb_buffer[idxL + 0] = (uint8_t)(vl & 0xFF);
+        // usb_buffer[idxL + 1] = (uint8_t)((vl >> 8) & 0xFF);
+        // usb_buffer[idxL + 2] = (uint8_t)((vl >> 16) & 0xFF);
+
+        // usb_buffer[idxR + 0] = (uint8_t)(vr & 0xFF);
+        // usb_buffer[idxR + 1] = (uint8_t)((vr >> 8) & 0xFF);
+        // usb_buffer[idxR + 2] = (uint8_t)((vr >> 16) & 0xFF);
+
+        int32_t v = (buf[i] >> 8); // * gain
+        // v = v * gain;
+
         usb_buffer[i * 3 + 0] = (uint8_t)(v & 0xFF);
         usb_buffer[i * 3 + 1] = (uint8_t)((v >> 8) & 0xFF);
         usb_buffer[i * 3 + 2] = (uint8_t)((v >> 16) & 0xFF);

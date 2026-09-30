@@ -23,12 +23,12 @@ RP2040 Pico + INMP441 的 **USB 麦克风固件**，通过 **TinyUSB UAC2** 把 
 | **实机验证：烧录后能否出声** | ⏳ **待办（当前最优先）** |
 | 单声道适配合入主线 | ⏳ 待基线验证通过后进行 |
 
-## 3. 主线 vs 单声道版（务必看清）
+## 3. 主线状态（v0.3）
 
-- **`src/`（master 主线）** = **原始立体声工程**代码：引脚 `SD=GP7 / SCK=GP8 / WS=GP9`，`rec_take()` 原样透传立体声。
-  它是**基线对照固件**，用来验证「I²S 采集 + USB 音频」链路是否通。
-- **单声道适配版** = `assets/reference/pico_mono_mic/`：引脚 `SD=GP18 / SCK=GP19 / WS=GP20`，`rec_take()` 只取左声道并复制到 L/R。
-  **尚未合入 `src/`**。
+- **`src/`（master 主线）= v0.3**：引脚固定 `SD=GP7 / SCK=GP8 / WS=GP9`（实际硬件接线，P10/P11/P12），`rec_take()` 立体声透明透传（移植自 `assets/reference/stereo_mic-master`）。
+- 设备名 `vibecoding-mate mic`，VID/PID = `0xCafe`/`0x4A10`（改 PID 强制 Windows 刷新缓存的设备名）。
+- **GP18/19/20 备用板型已舍弃**：固件引脚写死 GP7/8/9，不再提供 `-DI2S_DIN_PIN` 切换。
+- `assets/reference/pico_mono_mic/`、`stereo_mic-master_mod/` 仅为历史快照，勿直接照抄引脚。
 
 也就是说：**当前主线固件要接 GP7/8/9**，不是 GP18/19/20。
 
@@ -52,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File tools\build.ps1      # 产物 build\i2s
    - 主机是否识别出 `vibecoding-mate mic`；
    - 录音是否有声（单麦时通常只有一个声道有声，属预期）。
    - 若**不出声** → 问题在硬件/接线/USB 枚举层面；若**有声** → 链路 OK，可进入第 2 步。
-2. **合入单声道版**：把 `assets/reference/pico_mono_mic/` 的 `rec_buffer.c` 改动与引脚（GP18/19/20）并入 `src/`，升版本号重新出固件。
+2. ~~合入单声道版（GP18/19/20）~~：已验证与用户实际硬件不符，v0.3 回退为 GP7/8/9 透明透传，GP18/19/20 备用板型已舍弃。
 3. **后续功能**（用户规划过的完整板型）：PTT/功能键、OLED（I²C0，注意 GP16 冲突需先移除 WS2812）、蜂鸣器 PWM、扩展 LED。
 4. 可选：改为「真 1 声道」UAC2 描述符（当前是 L==R 伪立体声）。
 
