@@ -86,6 +86,26 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic-clear_hid-ptt / v0.5（新增：GP2 控制板载 LED 常亮/高频闪烁）
+
+> 分支：`mic-clear_hid-ptt`。在 v0.4 复合固件基础上新增 LED 指示功能：**上电默认常亮；GP2 接地时高频闪烁；GP2 断开后恢复常亮**。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v0.5.uf2` / `i2s_mic_mic_hid_v0.5.elf` |
+| 版本 | 0.5（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `4fd6ffb42f498b5cfa2314d87f3bc9f5320c9076e1b80f6461aa0d3198adb9b4` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 复合设备 | UAC2 麦克风（EP 0x81）+ HID 键盘（EP 0x82），`CFG_TUD_HID=1` |
+| LED 引脚 | WS2812 数据线 = **GP16**（PIO0 SM0，800 kHz） |
+| 触发引脚 | **GP2**（输入 + 内部上拉，接地 = 低电平） |
+| 状态逻辑 | 上电默认常亮（蓝；静音时偏红）→ GP2 接地：**100ms 半周期高频闪烁** → GP2 断开：恢复常亮 |
+| 变更 | 相对 v0.4：重写 `main.c` 的 `led_blinking_task()`，LED 亮灭由 GP2 电平驱动（`LED_BLINK_FAST_MS=100`）；版本 0.4→0.5 |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

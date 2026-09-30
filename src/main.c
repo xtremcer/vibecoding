@@ -433,28 +433,44 @@ bool tud_audio_set_itf_close_EP_cb(uint8_t rhport, tusb_control_request_t const*
 }
 
 //--------------------------------------------------------------------+
-// BLINKING TASK
+// LED 任务：默认常亮；GP2 接地(低电平)时高频闪烁；断开后恢复常亮
 //--------------------------------------------------------------------+
+#define LED_BLINK_FAST_MS 100   // 高频闪烁的半周期(ms)，100ms ≈ 5Hz
+
 void led_blinking_task(void)
 {
-    static uint32_t start_ms = 0;
-    static bool led_state = false;
+    static uint32_t next_ms = 0;    // 下一次闪烁翻转的时刻
+    static bool led_on = false;     // 当前 LED 亮灭
+    static bool prev_ptt = false;   // 上一次的 GP2 状态
 
-    if (board_millis() - start_ms < blink_interval_ms)
-        return; // not enough time
+    uint8_t r = is_muted() ? 120 : 0; // 静音时偏红，否则纯蓝
+    const uint8_t b = 140;
 
-    start_ms += blink_interval_ms;
+    bool ptt = !gpio_get(GPIO_PTT);   // GP2 接地 = 低电平 = 触发
+    uint32_t now = board_millis();
 
-    uint8_t r = is_muted() ? 120 : 0;
-    uint8_t g = 0;
-
-    if (led_state) {
-        led_set_color(r, g, 140);
-    } else {
-        led_set_color(r, g, 0);
+    if (!ptt) {
+        // 默认：常亮。仅在需要点亮时刷新一次，避免每圈都重刷 WS2812
+        if (!led_on || prev_ptt) {
+            led_on = true;
+            led_set_color(r, 0, b);
+        }
+        next_ms = now;      // 复位闪烁计时，便于下次触发立即开始
+        prev_ptt = false;
+        return;
     }
 
-    led_state = 1 - led_state; // toggle
+    // GP2 接地：高频闪烁
+    if (!prev_ptt) {        // 刚进入闪烁：立即复位计时
+        next_ms = now;
+        prev_ptt = true;
+    }
+    if ((int32_t)(now - next_ms) < 0) {
+        return;             // 未到下一个闪烁时刻
+    }
+    next_ms = now + LED_BLINK_FAST_MS;
+    led_on = !led_on;
+    led_set_color(led_on ? r : 0, 0, led_on ? b : 0);
 }
 
 //--------------------------------------------------------------------+
