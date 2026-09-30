@@ -233,6 +233,22 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led / v1.3（按键抽成独立模块 buttons.c / buttons.h）
+
+> 分支：`mic_ptt_led_key`。把自定义按键（映射表 + 去抖 + 触发行为 + HID 上报）抽成**独立模块**，便于未来"用户自由组合设定"——只需改 `buttons.c` 里的 `btn_configs[]` 表。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.3.uf2` / `i2s_mic_mic_hid_v1.3.elf` |
+| 版本 | 1.3（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `a0822dfbfa89132adada894e7841502cad09144c31ee79a1047362f28214e089` |
+| 新增模块 | `src/buttons.h` / `src/buttons.c`：`btn_config_t{pin,modifier,keycode,behavior,hold_ms}` 配置表 + `buttons_init()` + `buttons_task()`；修饰键宏 `MOD_LCTRL/LSHIFT/LALT/LGUI/...`；行为 `BTN_HOLD`（按住保持）/ `BTN_ONESHOT`（一键脉冲）；`PIN_PTT` 宏 |
+| 变更 | `main.c` 移除按键表/去抖/`hid_task`，改为 `buttons_init()` + `buttons_task()`；LED 用 `PIN_PTT`；CMake 增加 `src/buttons.c`。版本 1.2→1.3 |
+| 备注 | **未 push 到 GitHub**（用户要求仅本地提交） |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

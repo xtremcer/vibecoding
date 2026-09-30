@@ -1,4 +1,5 @@
 #include "led.h"
+#include "buttons.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,38 +47,6 @@ audio_control_range_4_n_t(1) sampleFreqRng; // Sample frequency range state
 
 void led_blinking_task(void);
 void audio_task(void);
-void hid_task(void);
-
-// PTT / 自定义按键：全部内部上拉，接地(低电平)触发
-#define GPIO_PTT 2   // PTT 键（同时用于板载 LED 闪烁指示）
-
-// 自定义按键表：每项 = { 引脚, HID 修饰键位, HID 键码 }；低电平(接地)=按下。
-//   modifier: 左Ctrl=0x01 左Shift=0x02 左Alt=0x04 左GUI(Win)=0x08（可 OR 多个）
-//   keycode : Enter=0x28 Backspace=0x2A Esc=0x29 a=0x04 c=0x06 v=0x19 l=0x0F `=0x35 \=0x31
-// 想改映射/加按键，改这张表即可（支持多键同时按下）。
-typedef struct {
-    uint8_t pin;
-    uint8_t modifier;
-    uint8_t keycode;
-} hid_button_t;
-
-static const hid_button_t hid_buttons[] = {
-    {  2, 0x08, 0x35 }, // GP2  PTT：Win + `
-    {  0, 0x00, 0x28 }, // GP0  Enter
-    {  1, 0x00, 0x2A }, // GP1  Backspace
-    {  3, 0x00, 0x29 }, // GP3  Esc
-    {  4, 0x01, 0x04 }, // GP4  Ctrl + A
-    {  5, 0x01, 0x06 }, // GP5  Ctrl + C
-    { 20, 0x01, 0x19 }, // GP20 Ctrl + V（改到空闲脚，避开与 I²S dout_pin=6 的冲突）
-    { 12, 0x01, 0x0F }, // GP12 Ctrl + L
-    { 13, 0x08, 0x31 }, // GP13 Win + '\'（一键脉冲：按下触发一次，最多保持 1s 自动释放）
-};
-#define HID_BUTTON_COUNT ((int)(sizeof(hid_buttons) / sizeof(hid_buttons[0])))
-
-// GP13(Win+\) 一键脉冲：按下触发一次，最多保持 PULSE_HOLD_MS 后自动释放；
-// 脉冲期间忽略再次按下（阻塞防抖）；长按/短按效果一致。
-#define GPIO_ONESHOT 13
-#define PULSE_HOLD_MS 1000
 
 int main(void)
 {
@@ -106,12 +75,7 @@ int main(void)
         board_init_after_tusb();
     }
 
-    // 初始化所有按键引脚：输入 + 内部上拉（外部按钮另一端接 GND，接地=低电平=按下）
-    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        gpio_init(hid_buttons[i].pin);
-        gpio_set_dir(hid_buttons[i].pin, GPIO_IN);
-        gpio_pull_up(hid_buttons[i].pin);
-    }
+    buttons_init();   // 初始化所有按键引脚（输入 + 内部上拉），见 buttons.c
 
     rec_init();
 
@@ -127,7 +91,7 @@ int main(void)
         tud_task();
         led_blinking_task();
         audio_task();
-        hid_task();
+        buttons_task();   // 自定义按键模块（去抖 + 组合键上报）
     }
 }
 
@@ -471,7 +435,7 @@ void led_blinking_task(void)
     uint8_t r = is_muted() ? 120 : 0; // 静音时偏红，否则纯蓝
     const uint8_t b = 140;
 
-    bool ptt = !gpio_get(GPIO_PTT);   // GP2 接地 = 低电平 = 触发
+    bool ptt = !gpio_get(PIN_PTT);    // PTT 键接地 = 低电平 = 触发
     uint32_t now = board_millis();
 
     if (!ptt) {
@@ -501,85 +465,9 @@ void led_blinking_task(void)
 }
 
 //--------------------------------------------------------------------+
-// HID 按键任务：把各按键脚的按下状态汇总成一个键盘报告发送（低电平=按下，内部上拉）。
-// 支持多键同时按下。采用"真去抖"：原始电平需稳定 HID_DEBOUNCE_MS 才改变有效状态；
-// 避免长按时触点抖动被误判为"松开"——尤其 Win 组合键被误松开会弹出 Windows 开始菜单。
+// 自定义按键（去抖 + 组合键上报）已抽到独立模块：src/buttons.c / buttons.h
+//   映射表 btn_configs[] 在 buttons.c，未来用户自由组合设定只需改那张表。
 //--------------------------------------------------------------------+
-#define HID_DEBOUNCE_MS 20                            // 去抖时间(ms)：原始电平需稳定这么久才生效
-
-static bool btn_raw[HID_BUTTON_COUNT];                // 原始采样状态
-static bool btn_pressed[HID_BUTTON_COUNT];            // 去抖后的有效状态
-static uint32_t btn_raw_change_ms[HID_BUTTON_COUNT];  // 原始状态上次变化时刻
-static uint8_t last_modifier = 0;                     // 上次上报的修饰键
-static uint8_t last_keycode[6] = {0};                 // 上次上报的键码
-
-// GP13(Win+\) 一键脉冲状态
-static bool oneshot_active = false;                   // 脉冲进行中（按住阶段）
-static uint32_t oneshot_start_ms = 0;                 // 脉冲开始时刻
-static bool oneshot_prev = false;                     // 上次去抖状态（用于检测按下沿）
-
-void hid_task(void)
-{
-    uint32_t now = board_millis();
-
-    // 1) 采样 + 真去抖：原始电平稳定 HID_DEBOUNCE_MS 后才更新有效状态
-    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        bool raw = !gpio_get(hid_buttons[i].pin); // 接地=低电平=按下
-        if (raw != btn_raw[i]) {
-            btn_raw[i] = raw;
-            btn_raw_change_ms[i] = now;           // 记录原始状态变化时刻
-        } else if (btn_pressed[i] != raw && (now - btn_raw_change_ms[i]) >= HID_DEBOUNCE_MS) {
-            btn_pressed[i] = raw;                 // 稳定足够久 → 生效
-        }
-    }
-
-    // 2) GP13(Win+\) 一键脉冲：按下沿启动（发一次 Win+\ 按下）；到 PULSE_HOLD_MS 或
-    //    按键松开（以先到者为准）即自动释放；脉冲期间忽略再次按下（阻塞防抖）。
-    bool os_pressed = false;
-    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        if (hid_buttons[i].pin == GPIO_ONESHOT) {
-            os_pressed = btn_pressed[i];
-            break;
-        }
-    }
-
-    if (!oneshot_active) {
-        if (os_pressed && !oneshot_prev) {        // 新的按下沿 → 启动脉冲
-            oneshot_active = true;
-            oneshot_start_ms = now;
-        }
-    } else {
-        // 到时 或 按键已松开 → 结束脉冲（释放 Win+\），保证不会一直按住
-        if ((now - oneshot_start_ms) >= PULSE_HOLD_MS || !os_pressed)
-            oneshot_active = false;
-    }
-    oneshot_prev = os_pressed;
-    bool oneshot_held = oneshot_active;
-
-    // 3) 汇总成一个 HID 报告：修饰键 OR，键码最多 6 个（GP13 仅在其脉冲按住阶段计入）
-    uint8_t modifier = 0;
-    uint8_t keycode[6] = {0};
-    int n = 0;
-    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        bool on = (hid_buttons[i].pin == GPIO_ONESHOT) ? oneshot_held : btn_pressed[i];
-        if (!on)
-            continue;
-        modifier |= hid_buttons[i].modifier;
-        if (hid_buttons[i].keycode && n < 6)
-            keycode[n++] = hid_buttons[i].keycode;
-    }
-
-    // 4) 与上次上报比较，有变化才发送（HID 忙时下个循环重试）
-    if (modifier == last_modifier && memcmp(keycode, last_keycode, sizeof(keycode)) == 0)
-        return;
-    if (!tud_hid_ready())
-        return;
-
-    if (tud_hid_keyboard_report(0, modifier, keycode)) {
-        last_modifier = modifier;
-        memcpy(last_keycode, keycode, sizeof(last_keycode));
-    }
-}
 
 // 报告发送完成回调（保留，避免未定义弱符号告警）
 void tud_hid_report_sent_cb(uint8_t instance, uint8_t const* report, uint8_t len)
