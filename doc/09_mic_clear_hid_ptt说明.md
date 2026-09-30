@@ -104,3 +104,26 @@ cmake --build build_mic_hid
 - `voice_clear`：纯音频固件 + rec_take 选槽修复（无 HID）。
 - `ptt`：早期复合固件（PID 曾为 `0x4B10` 导致 Windows 音频驱动未绑定，已回退 `0x4A10`，待真机确认）。
 - `mic-clear_hid-ptt`（本分支）：voice_clear 音频 + HID 键盘复合，PTT = `Win + \``，PID `0x4A10`。
+
+---
+
+## 八、v0.5 新增：GP2 控制板载 LED（常亮 / 高频闪烁）
+
+**引脚配置**
+- 板载 LED：WS2812 数据线 = **GP16**（PIO0 SM0，800 kHz，见 `led.c`）；亮灭沿用 `led_set_color()`。
+- 触发引脚：**GP2**（宏 `GPIO_PTT`，输入 + 内部上拉；外部按钮另一端接 GND）。与 PTT 复用同一输入，仅读取、不冲突。
+
+**状态切换逻辑**（`main.c` 的 `led_blinking_task()`）
+- 上电默认：**常亮**（蓝 `(0,0,140)`；静音时偏红 `(120,0,140)`）。
+- GP2 接地（低电平）：进入**高频闪烁**，每 `LED_BLINK_FAST_MS = 100ms` 翻转一次（≈5Hz）：亮=蓝、灭=熄。
+- GP2 断开（回到高电平）：**立即恢复常亮**。
+- 判定用 `gpio_get(GPIO_PTT)`；`prev_ptt` 记录上次状态做边沿检测（进入闪烁时复位计时）；`next_ms` 控制翻转节奏；常亮态只在需要时刷新一次，避免每圈重刷 WS2812。
+
+真值表：
+
+| GP2 电平 | LED 表现 |
+|---|---|
+| 高（与 GND 断开） | 常亮 |
+| 低（接到 GND） | 高频闪烁（100ms 半周期，≈5Hz） |
+
+对应固件：`firmware/i2s_mic_mic_hid_v0.5.uf2`（版本 0.5）。
