@@ -46,11 +46,8 @@ add_executable(i2s_mic
 pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/i2s.pio)
 pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
 
-# I²S 数据引脚(SD)。SCK = +1，WS = +2（PIO 硬约束：SD 必须是编号最小的）。
-# 默认 = 7：SD=GP7(Pin10) / SCK=GP8(Pin11) / WS=GP9(Pin12) —— 实际硬件接线
-# 切换接线（备用板型）：cmake -DI2S_DIN_PIN=18 .. => SD=GP18 / SCK=GP19 / WS=GP20
-set(I2S_DIN_PIN 7 CACHE STRING "I2S SD(din) GPIO; SCK=+1, WS=+2")
-target_compile_definitions(i2s_mic PRIVATE I2S_DIN_PIN=${I2S_DIN_PIN})
+# I²S 数据引脚固定为实际硬件接线：SD=GP7(Pin10) / SCK=GP8(Pin11) / WS=GP9(Pin12)
+# （PIO 硬约束：SCK=SD+1、WS=SD+2，SD 必须是编号最小的 GPIO；备用板型 GP18/19/20 已舍弃）
 
 pico_set_program_name(i2s_mic "i2s_mic")
 pico_set_program_version(i2s_mic "0.3")

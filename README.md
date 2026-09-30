@@ -29,7 +29,7 @@ vibecoding/
 ├── doc/                 文档：需求 / 架构 / 注意事项 / handoff
 ├── assets/
 │   ├── hardware/        硬件资料：Pico & RP2040 datasheet、INMP441 资料
-│   └── reference/       借鉴参考的原始/移植工程（stereo_mic-master_mod、pico_mono_mic）
+│   └── reference/       借鉴参考的原始/移植工程（stereo_mic-master、stereo_mic-master_mod、pico_mono_mic）
 ├── tools/               工具链依赖包与安装/构建脚本
 ├── CMakeLists.txt       根构建脚本（源码在 src/）
 ├── pico_sdk_import.cmake
@@ -41,47 +41,36 @@ vibecoding/
 
 ## 3. 当前主线状态（重要）
 
-`master` 主线为**单声道版 v0.2**（面向单颗 INMP441）：
+`master` 主线为 **v0.3**（面向单颗 INMP441，实际硬件接线 `SD=GP7 / SCK=GP8 / WS=GP9`）：
 
-- I²S：`SD=GP18(Pin24)`、`SCK(BCK)=GP19(Pin25)`、`WS(LRCLK)=GP20(Pin26)`
-- `rec_take()` 只取左声道并复制到 L/R → 输出 **L == R 的单声道**
-  （USB 仍声明 2 声道，因此**无需改动 UAC2 描述符**）
-- 当前固件：`firmware/i2s_mic_v0.2.uf2`
+- I²S：`SD=GP7(Pin10)`、`SCK(BCK)=GP8(Pin11)`、`WS(LRCLK)=GP9(Pin12)`
+- `rec_take()` 为**立体声透明透传**（直接移植自 `assets/reference/stereo_mic-master`）：把 I²S 采集到的 24-bit 样本原样送往 USB（声明 2 声道）
+- 设备名 `vibecoding-mate mic`，**VID/PID = `0xCafe` / `0x4A10`**（改 PID 是为了让 Windows 识别为新设备、刷新其缓存的旧设备名）
+- 当前固件：`firmware/i2s_mic_v0.3.uf2`
 
 历史 / 对照：
 
-- **v0.1** 是原始立体声工程（GP7/8/9，立体声原样透传），用于验证 I²S + USB 音频链路，
-  固件保留在 `firmware/i2s_mic_v0.1.uf2`，源码见 `assets/reference/stereo_mic-master_mod/`。
-- 单声道适配版参考源码亦存于 `assets/reference/pico_mono_mic/`（旧版引脚为 GP7/8/9，主线已改为 GP18/19/20）。
+- **v0.1** 原始立体声工程（GP7/8/9 透传），用于验证 I²S + USB 音频链路，固件保留在 `firmware/i2s_mic_v0.1.uf2`，源码见 `assets/reference/stereo_mic-master/`。
+- **v0.2** 曾改为 GP18/19/20 + 单声道复制，但因与用户实际硬件接线不符、且 Windows 不刷新设备名，**已被 v0.3 回退**。
+- 参考工程另存于 `assets/reference/stereo_mic-master_mod/`、`assets/reference/pico_mono_mic/`（历史快照，勿直接照抄引脚）。
 
-> ⚠️ 你的完整板型规划中功能键占 **GP3–GP10**，因此 I²S **不能**用 GP7/8/9，必须用 GP18/19/20。
+> ℹ️ 实际硬件只接了 GP7/8/9（P10/P11/P12），**不再支持 GP18/19/20 备用板型**；固件引脚已写死为 GP7/8/9。
 
 ---
 
 ## 4. 接线
 
-### 4.1 主线 v0.2（单声道，GP18/19/20）← 默认按这个接
+### 4.1 主线接线（v0.3，GP7/8/9）← 按这个接
 
-| INMP441 | Pico | 物理脚 |
-|---|---|---|
-| SD  | GP18 | Pin 24 |
-| SCK | GP19 | Pin 25 |
-| WS  | GP20 | Pin 26 |
-| L/R | GND | 选左声道 |
-| VDD | 3V3 | **Pin 36** |
-| GND | GND | Pin 18 |
+| INMP441 | Pico | 物理脚 | 说明 |
+|---|---|---|---|
+| SD  | GP7  | Pin 10 | 麦克风数据 |
+| SCK | GP8  | Pin 11 | 位时钟 BCK |
+| WS  | GP9  | Pin 12 | 声道时钟 LRCLK |
+| L/R | GND  | 接 GND | 选**左声道**（接地） |
+| VDD | 3V3  | **Pin 36** | INMP441 供电（只能 3.3V） |
+| GND | GND  | Pin 18 | 地线 |
 | CHIPEN | 模块内部上拉，可不接 | — |
-
-### 4.2 基线 v0.1（原始立体声，GP7/8/9）
-
-| INMP441 | Pico | 物理脚 |
-|---|---|---|
-| SD  | GP18 | Pin 24 |
-| SCK | GP19 | Pin 25 |
-| WS  | GP20 | Pin 26 |
-| L/R | GND | 选左声道 |
-| VDD | 3V3 | **Pin 36** |
-| GND | GND | Pin 18 |
 
 > ⚠️ **引脚硬约束（容易接反）**：PIO 的 `i2s_in_slave` 按 `din / din+1 / din+2` 读引脚，`i2s_out_master` 在 `base / base+1` 产生时钟，故必须满足 **`clock_pin_base == din_pin + 1`** —— 即 **SD 必须是这组连续 GPIO 里编号最小的**，顺序固定为 `SD → SCK → WS`（三个连续）。接反会完全采不到声音。
 >
@@ -131,7 +120,7 @@ ninja
 
 1. 按住 Pico 的 **BOOTSEL** 插 USB → 出现 `RPI-RP2` 盘 → 把 `.uf2` 拖进去（自动重启进入运行模式）。
 2. 正常插入（不按 BOOTSEL）→ 主机识别为 `vibecoding-mate mic`。
-3. 录音软件选它 → 应有声音。主线是立体声透传，接单颗麦克风时通常**只有一个声道有声**（另一声道浮空），属预期。
+3. 录音软件选它 → 应有声音。v0.3 是立体声透明透传，接单颗麦克风时通常**只有一个声道有声**（另一声道浮空），属预期。
 4. Windows 若仍显示旧设备名：设备管理器卸载该设备后重新拔插。
 
 > Pico 的 USB 口身兼两职：**按住 BOOTSEL 插 = 烧录盘；直接插 = USB 麦克风**。

@@ -9,7 +9,7 @@
 | 文件 | `i2s_mic_v0.3.uf2` / `i2s_mic_v0.3.elf` |
 | 版本 | 0.3（`pico_set_program_version`） |
 | 编译日期 | 2026-09-30 |
-| SHA256 | `e0afd9e684626ec0aacbf1c659f6d673098996ac8522291364217e846e1e4839` |
+| SHA256 | `deced72effeca81fa739f58b7f75461cee773a1fae0192a231b1f49efb0d692e` |
 | 设备名 | `vibecoding-mate mic` |
 | VID/PID | `0xCafe` / `0x4A10`（**新 PID**：原 `0x4010`，改 PID 强制 Windows 刷新缓存的设备名） |
 | 平台 | RP2040（Pico），family ID `rp2040` |
@@ -17,7 +17,7 @@
 | I²S 引脚 | **SD=GP7(Pin10)、SCK(BCK)=GP8(Pin11)、WS(LRCLK)=GP9(Pin12)**（实际硬件接线） |
 | 音频 | UAC2，48 kHz / 24-bit / 2 声道（透明透传；单 INMP441 接 L/R=GND，左声道有效、右声道为麦克风三态无效值） |
 | 工具链 | Pico SDK 2.1.1 + ARM GCC 14.2.Rel1 + CMake 3.31.5 + Ninja 1.12.1 + pioasm/picotool 2.1.1 |
-| 变更 | 主线引脚改回实际硬件 **GP7/8/9**（与原始工程一致）；`rec_take` 恢复原始立体声透传；**改 PID `0x4010`→`0x4A10` 解决 Windows 缓存旧设备名**；版本 0.2→0.3 |
+| 变更 | 主线引脚改回实际硬件 **GP7/8/9**（与原始工程一致）；`rec_take` 恢复原始立体声透传；**改 PID `0x4010`→`0x4A10` 解决 Windows 缓存旧设备名**；版本 0.2→0.3；**彻底移除 GP18/19/20 备用板型（`-DI2S_DIN_PIN` 编译开关已删除）** |
 
 ### 可复现性
 
@@ -28,7 +28,7 @@
 # 默认即 SD=GP7 / SCK=GP8 / WS=GP9（实际硬件接线）
 powershell -ExecutionPolicy Bypass -File tools\build.ps1
 certutil -hashfile build211\i2s_mic.uf2 SHA256
-# 应输出 e0afd9e684626ec0aacbf1c659f6d673098996ac8522291364217e846e1e4839
+# 应输出 deced72effeca81fa739f58b7f75461cee773a1fae0192a231b1f49efb0d692e
 ```
 
 ---

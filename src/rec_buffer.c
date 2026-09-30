@@ -39,15 +39,9 @@ static __attribute__((aligned(8))) int32_t audio_buffers[USB_AUDIO_BUFFERS][USB_
 // 顺序固定为 SD(最小) -> SCK -> WS，接反会完全采不到声音。
 //
 // sck_pin=10、dout_pin=6 在 sck_enable=false（仅接收）下未使用，保持原值即可。
-// I²S SD 引脚可在构建时切换：-DI2S_DIN_PIN=n
-//   n=7  -> SD=GP7  / SCK=GP8  / WS=GP9 （默认，实际硬件接线）
-//   n=18 -> SD=GP18 / SCK=GP19 / WS=GP20（备用板型）
-// clock_pin_base 自动取 I2S_DIN_PIN+1，WS 取 +2（PIO 硬约束：SD 必须最小）。
-#ifndef I2S_DIN_PIN
-#define I2S_DIN_PIN 7
-#endif
-
-static i2s_config my_i2s_config = { 48000, 256, 32, 10, 6, I2S_DIN_PIN, I2S_DIN_PIN + 1, false };
+// I²S 引脚固定为实际硬件接线（GP7/8/9），不再提供备用板型（GP18/19/20 已舍弃）。
+// PIO 硬约束：clock_pin_base == din_pin+1，且三者连续 —— SCK=GP8、WS=GP9 由 GP7 推导。
+static i2s_config my_i2s_config = { 48000, 256, 32, 10, 6, 7, 8, false };
 
 static void process_audio(const int32_t* input, int32_t* output, size_t num_frames)
 {
