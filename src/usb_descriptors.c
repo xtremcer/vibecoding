@@ -36,11 +36,13 @@
  */
 #define _PID_MAP(itf, n) ((CFG_TUD_##itf) << (n))
 
-/* Windows 会按 VID/PID 缓存 USB 设备名：只改产品字符串而不改 PID，PC 端显示名不会刷新。
- * 改 PID 可让系统把它当作"新设备"，从而读取新的产品名 "vibecoding-mate mic"。
- * 原 PID 为 0x4010（AUDIO 位），现改为 0x4A10；若日后需再次强制刷新，继续调整末位即可。 */
+/* Windows 会按 VID/PID 缓存设备名/驱动：只改描述符而不改 PID，PC 端可能仍按旧设备识别。
+ * 本固件在 UAC2 麦克风之外新增了 HID 键盘接口（复合设备；即"模拟 MIC"——一个物理设备
+ * 被主机同时识别为 音频设备 与 HID 键盘 两个功能），描述符结构变化较大，故把 PID 第二字节
+ * 由 0x4A 升到 0x4B，强制 Windows 当成"新复合设备"重新枚举并安装驱动。
+ *   VID 0xCafe, PID 0x4B10 —— vibecoding-mate mic（音频 + 键盘 复合） */
 #define USB_VID 0xCafe
-#define USB_PID 0x4A10
+#define USB_PID 0x4B10
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -81,10 +83,13 @@ uint8_t const* tud_descriptor_device_cb(void)
 enum {
     ITF_NUM_AUDIO_CONTROL = 0,
     ITF_NUM_AUDIO_STREAMING,
+    ITF_NUM_HID,   // 新增：HID 键盘接口（复合设备的第二个功能，接口号 2）
     ITF_NUM_TOTAL
 };
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO_MIC_TWO_CH_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN \
+    + CFG_TUD_AUDIO * TUD_AUDIO_MIC_TWO_CH_DESC_LEN \
+    + TUD_HID_DESC_LEN)
 
 #if TU_CHECK_MCU(OPT_MCU_LPC175X_6X, OPT_MCU_LPC177X_8X, OPT_MCU_LPC40XX)
 // LPC 17xx and 40xx endpoint type (bulk/interrupt/iso) are fixed by its number
@@ -99,12 +104,32 @@ enum {
 #define EPNUM_AUDIO 0x01
 #endif
 
+// HID 键盘使用独立的 IN 端点（地址 0x82），与音频端点 0x81 不冲突
+#define EPNUM_HID 0x02
+
+// HID 键盘报告描述符（标准 8 字节键盘，TinyUSB 模板宏生成）
+uint8_t const hid_report_descriptor[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD()
+};
+
+// String Descriptor Index（在配置描述符之前定义，供 HID 接口引用）
+enum {
+    STRID_LANGID = 0,
+    STRID_MANUFACTURER,
+    STRID_PRODUCT,
+    STRID_SERIAL,
+    STRID_HID = 5,   // HID 键盘接口字符串索引（对应 string_desc_arr[5] = "Keyboard"）
+};
+
 uint8_t const desc_configuration[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 100),
 
     // Interface number, string index, EP Out & EP In address, EP size
-    TUD_AUDIO_MIC_TWO_CH_DESCRIPTOR(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_stridx*/ 0, /*_nBytesPerSample*/ 3, /*_nBitsUsedPerSample*/ 3 * 8, /*_epin*/ 0x80 | EPNUM_AUDIO, /*_epsize*/ CFG_TUD_AUDIO_EP_SZ_IN)
+    TUD_AUDIO_MIC_TWO_CH_DESCRIPTOR(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_stridx*/ 0, /*_nBytesPerSample*/ 3, /*_nBitsUsedPerSample*/ 3 * 8, /*_epin*/ 0x80 | EPNUM_AUDIO, /*_epsize*/ CFG_TUD_AUDIO_EP_SZ_IN),
+
+    // HID 键盘接口（复合设备的第二个功能）：boot 键盘协议，IN 中断端点 0x82
+    TUD_HID_DESCRIPTOR(/*_itfnum*/ ITF_NUM_HID, /*_stridx*/ STRID_HID, /*_boot_protocol*/ HID_ITF_PROTOCOL_KEYBOARD, /*_report_desc_len*/ sizeof(hid_report_descriptor), /*_epin*/ 0x80 | EPNUM_HID, /*_epsize*/ CFG_TUD_HID_EP_BUFSIZE, /*_ep_interval*/ 10)
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -117,16 +142,42 @@ uint8_t const* tud_descriptor_configuration_cb(uint8_t index)
 }
 
 //--------------------------------------------------------------------+
+// HID 回调（复合设备的第二个功能：键盘）
+//--------------------------------------------------------------------+
+// 标准 USB 键盘报告描述符见上方（hid_report_descriptor[]，在配置描述符之前定义）。
+// Invoked when received GET HID REPORT DESCRIPTOR request
+uint8_t const* tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    (void)instance;
+    return hid_report_descriptor;
+}
+
+// Invoked when received GET_REPORT control request
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+    return 0;
+}
+
+// Invoked when received SET_REPORT control request or data on OUT endpoint.
+// 键盘的 LED 状态（CapsLock / NumLock 等）由主机经 OUTPUT 报告下发，
+// 此处读取即可（如需把主机状态反映到板载 LED，可在此解析 buffer[0]）。
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
+}
+
+//--------------------------------------------------------------------+
 // String Descriptors
 //--------------------------------------------------------------------+
-
-// String Descriptor Index
-enum {
-    STRID_LANGID = 0,
-    STRID_MANUFACTURER,
-    STRID_PRODUCT,
-    STRID_SERIAL,
-};
 
 // array of pointer to string descriptors
 char const* string_desc_arr[] = {
@@ -135,6 +186,7 @@ char const* string_desc_arr[] = {
     "vibecoding-mate mic", // 2: Product
     NULL, // 3: Serials will use unique ID if possible
     "UAC2", // 4: Audio Interface
+    "Keyboard", // 5: HID Keyboard Interface
 };
 
 static uint16_t _desc_str[32 + 1];

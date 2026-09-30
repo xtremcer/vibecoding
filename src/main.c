@@ -45,6 +45,7 @@ audio_control_range_4_n_t(1) sampleFreqRng; // Sample frequency range state
 
 void led_blinking_task(void);
 void audio_task(void);
+static void hid_task(void);
 
 int main(void)
 {
@@ -87,6 +88,7 @@ int main(void)
         tud_task();
         led_blinking_task();
         audio_task();
+        hid_task();
     }
 }
 
@@ -135,6 +137,34 @@ void audio_task(void)
         uint8_t* buf = rec_take(is_muted() || !ptt_is_pressed(), vol);
         tud_audio_write_support_ff(0, buf, AUDIO_SAMPLE_RATE / 1000 * 3 * 2);
     }
+}
+
+//--------------------------------------------------------------------+
+// HID 键盘任务（复合设备的第二个功能演示）
+//--------------------------------------------------------------------+
+// 按下 PTT 时，让本设备以"HID 键盘"身份向主机发送一次按键；松开时释放。
+// 这同时证明了复合设备里的键盘功能确实被主机识别并可工作。
+// 产品化时可在此替换为 "PTT 触发 2 个组合键" 等映射（modifier + 多个键码）。
+static void hid_task(void)
+{
+    static bool ptt_prev = false;
+
+    // HID 接口未就绪（未挂载等）时不发送
+    if (!tud_hid_ready())
+        return;
+
+    bool pressed = ptt_is_pressed();
+    if (pressed == ptt_prev)
+        return;          // 仅在状态跳变时发送，避免重复
+    ptt_prev = pressed;
+
+    uint8_t modifier = 0;
+    uint8_t keycode[6] = { 0 };
+    if (pressed) {
+        // 演示用：发送单个键 'A'（无修饰键）。可改为 modifier + 多个键码实现组合键。
+        keycode[0] = HID_KEY_A;
+    }
+    tud_hid_keyboard_report(0, modifier, keycode);
 }
 
 //--------------------------------------------------------------------+

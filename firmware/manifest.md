@@ -76,7 +76,9 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 | 项目 | 值 |
 |---|---|
 | 文件 | `i2s_mic_ptt.uf2` / `i2s_mic_ptt.elf` |
-| 基线 | 与主线 v0.3 一致：GP7/8/9 + PID `0x4A10` + 立体声透明透传 + 设备名 `vibecoding-mate mic` |
+| 基线 | 与主线 v0.3 一致：GP7/8/9 + 设备名 `vibecoding-mate mic` |
+| **复合设备（核心）** | **VID `0xCafe` / PID `0x4B10`**：在现有 UAC2 音频(MIC) 之外，新增 HID 键盘接口（接口 2、IN 端点 0x82、boot 键盘协议、标准键盘报告描述符）。一个物理设备被主机识别为「音频设备 + HID 键盘」两个功能（即需求中的「模拟 MIC」= 让设备模拟出两个 USB 功能）。`CFG_TUD_HID=1`（见 `src/usb_descriptors.c` / `src/tusb_config.h`） |
+| 演示 | `src/main.c` 新增 `hid_task()`：PTT(GP2) 按下即以 HID 键盘身份向主机发送一次按键（松开释放），证明键盘功能可用；后续可替换为「2 个组合键」映射 |
 | 附加功能 | PTT：GP2 输入 + 内部上拉，低电平有效，约 5ms 消抖；`rec_take(is_muted() || !ptt_is_pressed(), vol)` —— **按住 PTT 才送音，松开静音** |
-| SHA256 | `85c2e63da5d87942105ce5e0b4e3b280e3cddc80cc04e355ce0fc0811cffe727` |
+| SHA256 | `242cd50bc9730a18ee6837a7860a7dfe30a35c4a1e61e8165a7b326fd708b7a7` |
 | 同步 | 已 `git merge master`（v0.3，GP7/8/9 + PID 修复）合入 ptt |

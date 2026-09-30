@@ -94,7 +94,7 @@ extern "C" {
 #define CFG_TUD_AUDIO 1
 #define CFG_TUD_CDC 0
 #define CFG_TUD_MSC 0
-#define CFG_TUD_HID 0
+#define CFG_TUD_HID 1   // 复合设备：在 UAC2 麦克风之外再叠 HID 键盘接口（"模拟 MIC" = 一个物理设备被主机同时识别为 音频设备 + HID 键盘 两个功能）
 #define CFG_TUD_MIDI 0
 #define CFG_TUD_VENDOR 0
 
