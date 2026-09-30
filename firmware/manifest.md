@@ -216,6 +216,23 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led / v1.2（修复 GP13：松开即释放，保证不会一直按住 Win）
+
+> 分支：`mic_ptt_led`。修复 v1.1 "GP13 触发后 Win 一直不释放"：脉冲改为**到时(1s) 或 按键松开（以先到者为准）即释放**。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.2.uf2` / `i2s_mic_mic_hid_v1.2.elf` |
+| 版本 | 1.2（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `0a6013ccab8bf7da1c19d32964a45b24e713f3fdd1a67c4eaf418a803460f95a` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 变更 | GP13 脉冲结束条件由"仅 1s 超时"改为"`(now-start)>=PULSE_HOLD_MS` **或** 按键松开，先到者即释放"，并用无符号计时；避免 Win 被一直按住。版本 1.1→1.2 |
+| 备注 | **未 push 到 GitHub**（用户要求仅本地提交） |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

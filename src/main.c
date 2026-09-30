@@ -515,7 +515,7 @@ static uint8_t last_keycode[6] = {0};                 // 上次上报的键码
 
 // GP13(Win+\) 一键脉冲状态
 static bool oneshot_active = false;                   // 脉冲进行中（按住阶段）
-static uint32_t oneshot_end_ms = 0;                   // 脉冲自动释放时刻
+static uint32_t oneshot_start_ms = 0;                 // 脉冲开始时刻
 static bool oneshot_prev = false;                     // 上次去抖状态（用于检测按下沿）
 
 void hid_task(void)
@@ -533,24 +533,28 @@ void hid_task(void)
         }
     }
 
-    // 2) GP13(Win+\) 一键脉冲状态机：按下沿启动脉冲(发一次按下)，最多保持 PULSE_HOLD_MS
-    //    后自动释放；脉冲期间忽略再次按下（阻塞防抖）；长按/短按效果一致。
-    bool oneshot_held = false;
+    // 2) GP13(Win+\) 一键脉冲：按下沿启动（发一次 Win+\ 按下）；到 PULSE_HOLD_MS 或
+    //    按键松开（以先到者为准）即自动释放；脉冲期间忽略再次按下（阻塞防抖）。
+    bool os_pressed = false;
     for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        if (hid_buttons[i].pin != GPIO_ONESHOT)
-            continue;
-        bool pressed = btn_pressed[i];
-        if (oneshot_active) {
-            if ((int32_t)(now - oneshot_end_ms) >= 0)
-                oneshot_active = false;           // 到时自动释放
-        } else if (pressed && !oneshot_prev) {    // 新的按下沿
-            oneshot_active = true;
-            oneshot_end_ms = now + PULSE_HOLD_MS;
+        if (hid_buttons[i].pin == GPIO_ONESHOT) {
+            os_pressed = btn_pressed[i];
+            break;
         }
-        oneshot_prev = pressed;
-        oneshot_held = oneshot_active;
-        break;
     }
+
+    if (!oneshot_active) {
+        if (os_pressed && !oneshot_prev) {        // 新的按下沿 → 启动脉冲
+            oneshot_active = true;
+            oneshot_start_ms = now;
+        }
+    } else {
+        // 到时 或 按键已松开 → 结束脉冲（释放 Win+\），保证不会一直按住
+        if ((now - oneshot_start_ms) >= PULSE_HOLD_MS || !os_pressed)
+            oneshot_active = false;
+    }
+    oneshot_prev = os_pressed;
+    bool oneshot_held = oneshot_active;
 
     // 3) 汇总成一个 HID 报告：修饰键 OR，键码最多 6 个（GP13 仅在其脉冲按住阶段计入）
     uint8_t modifier = 0;
