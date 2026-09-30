@@ -132,3 +132,32 @@ cmake --build build_mic_hid
 对应固件：`firmware/i2s_mic_mic_hid_v0.6.uf2`（版本 0.6）。
 
 > 参考官方示例：<https://github.com/raspberrypi/pico-examples/blob/master/blink/blink.c>
+
+---
+
+## 九、v0.8 新增：8 个自定义按键（GP0/1/3/4/5/6/12/13）
+
+**引脚与映射**（全部**内部上拉、低电平有效**：按钮另一端接 GND，接地=按下）
+
+| 引脚 | 功能 | HID 修饰键 | HID 键码 |
+|---|---|---|---|
+| GP0  | Enter     | 0x00 | 0x28 |
+| GP1  | Backspace | 0x00 | 0x2A |
+| GP3  | Esc       | 0x00 | 0x29 |
+| GP4  | Ctrl + A  | 0x01 | 0x04 |
+| GP5  | Ctrl + C  | 0x01 | 0x06 |
+| GP6  | Ctrl + V  | 0x01 | 0x19 |
+| GP12 | Ctrl + L  | 0x01 | 0x0F |
+| GP13 | Win + `\` | 0x08 | 0x31 |
+| GP2  | PTT：Win + `` ` `` | 0x08 | 0x35 |
+
+（修饰键：左Ctrl=`0x01`、左Shift=`0x02`、左Alt=`0x04`、左GUI/Win=`0x08`）
+
+**实现**（`main.c`）
+- 用一张映射表 `hid_buttons[]`（`{pin, modifier, keycode}`）描述所有按键，PTT 也在其中。
+- `main()` 循环把每个引脚初始化为「输入 + 内部上拉」。
+- `hid_task()` 表驱动：每 10ms 去抖采样 → 汇总成一个键盘报告（修饰键按位 OR、键码最多 6 个）→ **与上次上报比较，有变化才发送**。因此支持多键同时按下，且不会重复刷报告。
+
+**想改映射/加键**：直接改 `hid_buttons[]` 表即可（改 `modifier`/`keycode` 或增删行）。
+
+对应固件：`firmware/i2s_mic_mic_hid_v0.8.uf2`（版本 0.8）。

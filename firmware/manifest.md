@@ -144,6 +144,25 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led / v0.8（新增 8 个自定义按键）
+
+> 分支：`mic_ptt_led`。新增 8 个自定义按键（GP0/1/3/4/5/6/12/13，内部上拉、低有效），与 PTT 一起由统一的 HID 报告任务汇总处理（支持多键同按）。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v0.8.uf2` / `i2s_mic_mic_hid_v0.8.elf` |
+| 版本 | 0.8（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `e2cb5e8b008288f374dff56349b51638664df893c382fc49365fcc0ba89af5c2` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 复合设备 | UAC2 麦克风（EP 0x81）+ HID 键盘（EP 0x82） |
+| 按键映射 | GP0=Enter、GP1=Backspace、GP3=Esc、GP4=Ctrl+A、GP5=Ctrl+C、GP6=Ctrl+V、GP12=Ctrl+L、GP13=Win+\；GP2=PTT(Win+`) |
+| 引脚 | 全部输入 + 内部上拉，接地(低电平)=按下；板载 LED=GP25；I²S=GP7/8/9；WS2812=GP16 |
+| 变更 | `main.c` 新增 `hid_buttons[]` 映射表；`hid_task()` 改为表驱动汇总（修饰键 OR + 最多 6 键码，变化才发送）；`main()` 循环初始化所有按键脚。版本 0.7→0.8 |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

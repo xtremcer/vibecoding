@@ -48,15 +48,31 @@ void led_blinking_task(void);
 void audio_task(void);
 void hid_task(void);
 
-// PTT 按键：GP2，接地触发（内部上拉，外部把按钮接到 GND）
-#define GPIO_PTT 2
-// PTT 触发时发送的键组合：Win(左 GUI) + ` 同时按下，模拟"对讲机"效果。
-//   GP2 接地(低电平=按下) -> 同时按下 Win+`；GP2 断开接地(高电平=松开) -> 同时松开 Win+`。
-// 想换组合改这里：
-//   PTT_MODIFIER ：Win=0x08(左GUI)、左Ctrl=0x01、左Alt=0x04，可 OR 多个（如 Win+Alt=0x08|0x04）
-//   PTT_KEYCODE  ：`=0x35、空格=0x2C、Tab=0x2B、Esc=0x29、F13=0x68
-#define PTT_MODIFIER 0x08   // 左 GUI（Windows 键）
-#define PTT_KEYCODE  0x35   // Grave Accent / 反引号 `
+// PTT / 自定义按键：全部内部上拉，接地(低电平)触发
+#define GPIO_PTT 2   // PTT 键（同时用于板载 LED 闪烁指示）
+
+// 自定义按键表：每项 = { 引脚, HID 修饰键位, HID 键码 }；低电平(接地)=按下。
+//   modifier: 左Ctrl=0x01 左Shift=0x02 左Alt=0x04 左GUI(Win)=0x08（可 OR 多个）
+//   keycode : Enter=0x28 Backspace=0x2A Esc=0x29 a=0x04 c=0x06 v=0x19 l=0x0F `=0x35 \=0x31
+// 想改映射/加按键，改这张表即可（支持多键同时按下）。
+typedef struct {
+    uint8_t pin;
+    uint8_t modifier;
+    uint8_t keycode;
+} hid_button_t;
+
+static const hid_button_t hid_buttons[] = {
+    {  2, 0x08, 0x35 }, // GP2  PTT：Win + `
+    {  0, 0x00, 0x28 }, // GP0  Enter
+    {  1, 0x00, 0x2A }, // GP1  Backspace
+    {  3, 0x00, 0x29 }, // GP3  Esc
+    {  4, 0x01, 0x04 }, // GP4  Ctrl + A
+    {  5, 0x01, 0x06 }, // GP5  Ctrl + C
+    {  6, 0x01, 0x19 }, // GP6  Ctrl + V
+    { 12, 0x01, 0x0F }, // GP12 Ctrl + L
+    { 13, 0x08, 0x31 }, // GP13 Win + '\'
+};
+#define HID_BUTTON_COUNT ((int)(sizeof(hid_buttons) / sizeof(hid_buttons[0])))
 
 int main(void)
 {
@@ -85,9 +101,12 @@ int main(void)
         board_init_after_tusb();
     }
 
-    gpio_init(GPIO_PTT);
-    gpio_set_dir(GPIO_PTT, GPIO_IN);
-    gpio_pull_up(GPIO_PTT);
+    // 初始化所有按键引脚：输入 + 内部上拉（外部按钮另一端接 GND，接地=低电平=按下）
+    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
+        gpio_init(hid_buttons[i].pin);
+        gpio_set_dir(hid_buttons[i].pin, GPIO_IN);
+        gpio_pull_up(hid_buttons[i].pin);
+    }
 
     rec_init();
 
@@ -477,40 +496,48 @@ void led_blinking_task(void)
 }
 
 //--------------------------------------------------------------------+
-// HID PTT 任务：GP2 接地时发送键盘按下，松开发送释放（带去抖与重试）
+// HID 按键任务：把 GP2/GP0/GP1/GP3/GP4/GP5/GP6/GP12/GP13 的按下状态汇总成
+// 一个键盘报告发送（低电平=按下，内部上拉）。支持多键同时按下。
 //--------------------------------------------------------------------+
-static bool ptt_current = false;   // 去抖后的物理状态
-static bool ptt_reported = false;  // 已成功上报给主机状态
-static uint32_t ptt_debounce_ms = 0;
+static bool btn_pressed[HID_BUTTON_COUNT];       // 去抖后的按下状态
+static uint32_t btn_change_ms[HID_BUTTON_COUNT]; // 上次状态变化时刻
+static uint8_t last_modifier = 0;                // 上次上报的修饰键
+static uint8_t last_keycode[6] = {0};            // 上次上报的键码
 
 void hid_task(void)
 {
+    uint32_t now = board_millis();
+
+    // 1) 采样 + 去抖（10ms 稳定）
+    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
+        bool pressed = !gpio_get(hid_buttons[i].pin); // 接地=低电平=按下
+        if (pressed != btn_pressed[i] && (now - btn_change_ms[i]) > 10) {
+            btn_change_ms[i] = now;
+            btn_pressed[i] = pressed;
+        }
+    }
+
+    // 2) 汇总成一个 HID 报告：修饰键 OR，键码最多 6 个
+    uint8_t modifier = 0;
+    uint8_t keycode[6] = {0};
+    int n = 0;
+    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
+        if (!btn_pressed[i])
+            continue;
+        modifier |= hid_buttons[i].modifier;
+        if (hid_buttons[i].keycode && n < 6)
+            keycode[n++] = hid_buttons[i].keycode;
+    }
+
+    // 3) 与上次上报比较，有变化才发送（HID 忙时下个循环重试）
+    if (modifier == last_modifier && memcmp(keycode, last_keycode, sizeof(keycode)) == 0)
+        return;
     if (!tud_hid_ready())
         return;
 
-    bool low = !gpio_get(GPIO_PTT); // 接地=低电平=按下
-    uint32_t now = board_millis();
-
-    // 边沿去抖（30ms）
-    if (low != ptt_current && (now - ptt_debounce_ms) > 30) {
-        ptt_debounce_ms = now;
-        ptt_current = low;
-    }
-
-    // 状态与上一次上报不一致则发送（tud_hid_keyboard_report 忙时返回 false，下个循环重试）
-    if (ptt_current != ptt_reported) {
-        uint8_t keycode[6] = {0};
-        bool ok;
-        if (ptt_current) {
-            keycode[0] = PTT_KEYCODE;
-            // 同时按下 Win(PTT_MODIFIER) + 键(PTT_KEYCODE)，即"对讲机"触发
-            ok = tud_hid_keyboard_report(0, PTT_MODIFIER, keycode);
-        } else {
-            // 同时松开 Win + 键
-            ok = tud_hid_keyboard_report(0, 0, NULL);
-        }
-        if (ok)
-            ptt_reported = ptt_current;
+    if (tud_hid_keyboard_report(0, modifier, keycode)) {
+        last_modifier = modifier;
+        memcpy(last_keycode, keycode, sizeof(last_keycode));
     }
 }
 
