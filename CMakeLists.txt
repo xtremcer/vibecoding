@@ -41,6 +41,7 @@ add_executable(i2s_mic
     src/led.c
     src/rec_buffer.c
     src/i2s.c
+    src/ptt.c
 )
 
 pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/i2s.pio)

@@ -10,6 +10,7 @@
 #include "pico/stdio.h"
 #include "pico/stdio_uart.h"
 #include "rec_buffer.h"
+#include "ptt.h"
 #include "tusb.h"
 #include "tusb_config.h"
 
@@ -72,6 +73,7 @@ int main(void)
     }
 
     rec_init();
+    ptt_init();
 
     sampFreq = AUDIO_SAMPLE_RATE;
     clkValid = 1;
@@ -129,7 +131,8 @@ void audio_task(void)
     static uint32_t start_ms = 0;
     if (audio_data_ready()) {
         int32_t vol = ((int32_t)volume[0] * (int32_t)volume[1]) / 255;
-        uint8_t* buf = rec_take(is_muted(), vol);
+        // PTT（一键通话）：只有按住 PTT 时才送出声音，松开即静音
+        uint8_t* buf = rec_take(is_muted() || !ptt_is_pressed(), vol);
         tud_audio_write_support_ff(0, buf, AUDIO_SAMPLE_RATE / 1000 * 3 * 2);
     }
 }
