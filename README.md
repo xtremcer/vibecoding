@@ -41,32 +41,38 @@ vibecoding/
 
 ## 3. 当前主线状态（重要）
 
-`master` 主线目前是**原始立体声工程**的代码（`src/` = 原 `stereo_mic-master_mod`）：
+`master` 主线为**单声道版 v0.2**（面向单颗 INMP441）：
 
-- I²S：`SD=GP7`、`SCK(BCK)=GP8`、`WS(LRCLK)=GP9`
-- `rec_take()` 原样透传立体声（未做单声道处理）
-- 用于作为**基线对照**验证 I²S + USB 音频链路
+- I²S：`SD=GP18(Pin24)`、`SCK(BCK)=GP19(Pin25)`、`WS(LRCLK)=GP20(Pin26)`
+- `rec_take()` 只取左声道并复制到 L/R → 输出 **L == R 的单声道**
+  （USB 仍声明 2 声道，因此**无需改动 UAC2 描述符**）
+- 当前固件：`firmware/i2s_mic_v0.2.uf2`
 
-**单声道适配版**（单个 INMP441、引脚 `SD=GP18 / SCK=GP19 / WS=GP20`、只取左声道复制到 L/R）目前放在
-`assets/reference/pico_mono_mic/`，**尚未合入主干**。基线验证通过后，可将其并入 `src/` 作为主线。
+历史 / 对照：
+
+- **v0.1** 是原始立体声工程（GP7/8/9，立体声原样透传），用于验证 I²S + USB 音频链路，
+  固件保留在 `firmware/i2s_mic_v0.1.uf2`，源码见 `assets/reference/stereo_mic-master_mod/`。
+- 单声道适配版参考源码亦存于 `assets/reference/pico_mono_mic/`（旧版引脚为 GP7/8/9，主线已改为 GP18/19/20）。
+
+> ⚠️ 你的完整板型规划中功能键占 **GP3–GP10**，因此 I²S **不能**用 GP7/8/9，必须用 GP18/19/20。
 
 ---
 
 ## 4. 接线
 
-### 4.1 主线（原始立体声，GP7/8/9）
+### 4.1 主线 v0.2（单声道，GP18/19/20）← 默认按这个接
 
 | INMP441 | Pico | 物理脚 |
 |---|---|---|
-| SCK | GP8 | Pin 11 |
-| WS  | GP9 | Pin 12 |
-| SD  | GP7 | Pin 10 |
+| SD  | GP18 | Pin 24 |
+| SCK | GP19 | Pin 25 |
+| WS  | GP20 | Pin 26 |
 | L/R | GND | 选左声道 |
 | VDD | 3V3 | **Pin 36** |
 | GND | GND | Pin 18 |
 | CHIPEN | 模块内部上拉，可不接 | — |
 
-### 4.2 单声道适配版（GP18/19/20）
+### 4.2 基线 v0.1（原始立体声，GP7/8/9）
 
 | INMP441 | Pico | 物理脚 |
 |---|---|---|

@@ -47,7 +47,7 @@ pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/i2s.pio)
 pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
 
 pico_set_program_name(i2s_mic "i2s_mic")
-pico_set_program_version(i2s_mic "0.1")
+pico_set_program_version(i2s_mic "0.2")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(i2s_mic 1)
