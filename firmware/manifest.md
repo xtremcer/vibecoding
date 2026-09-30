@@ -62,6 +62,30 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic-clear_hid-ptt / v0.4（mic-clear_hid-ptt 分支 · 复合设备：麦克风 + HID 键盘 PTT）
+
+> 分支：`mic-clear_hid-ptt`（从 `voice_clear` 切出）。voice_clear 音频固件 + HID 自定义键盘复合；PTT = **GP2 接地时按下 `Win + \``，断开时松开**（对讲机效果）。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v0.4.uf2` / `i2s_mic_mic_hid_v0.4.elf` |
+| 版本 | 0.4（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `99ac79f66ff22178abe72a763de8e3c756761cecaf5dfcb08f6cde4223c786fe` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10`（复用已验证可用的音频身份） |
+| 平台 | RP2040（Pico），family ID `rp2040` |
+| 复合设备 | UAC2 麦克风（EP 0x81）+ HID 键盘（EP 0x82），`CFG_TUD_HID=1`，CONFIG total=170 / #if=3 |
+| 源码 | 根目录 `src/`（来自 `mic_hid_src.zip`） |
+| I²S 引脚 | SD=GP7(Pin10)、SCK(BCK)=GP8(Pin11)、WS(LRCLK)=GP9(Pin12) |
+| 音频 | UAC2，48 kHz / 24-bit / 2 声道；含 voice_clear 的 rec_take 选槽修复（左右都出声、隔离浮空槽噪声） |
+| PTT | GP2 接按钮到 GND；接地=按下 `Win + \``（modifier `0x08` + keycode `0x35`），断开=松开；30ms 去抖 |
+| 工具链 | Pico SDK 2.1.1 + ARM GCC 14.2.Rel1 + CMake 3.31.5 + Ninja 1.12.1（pioasm/picotool 用预编译版） |
+| 变更 | 相对 voice_clear：`tusb_config.h` 开 HID；`usb_descriptors.c` 加 HID 接口/报告描述符/回调；`main.c` 加 GP2 PTT→Win+`。修复 `hid_report_descriptor` 前向引用编译错误 |
+| 文档 | `doc/09_mic_clear_hid_ptt说明.md` |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

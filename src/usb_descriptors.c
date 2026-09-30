@@ -27,6 +27,7 @@
 
 #include "bsp/board_api.h"
 #include "tusb.h"
+#include "class/hid/hid_device.h"   // HID device 专用：TUD_HID_DESCRIPTOR / TUD_HID_REPORT_DESC_KEYBOARD / 回调声明
 
 /* A combination of interfaces must have a unique product id, since PC will save device driver after the first plug.
  * Same VID/PID with different interface e.g MSC (first), then CDC (later) will possibly cause system error on PC.
@@ -81,10 +82,11 @@ uint8_t const* tud_descriptor_device_cb(void)
 enum {
     ITF_NUM_AUDIO_CONTROL = 0,
     ITF_NUM_AUDIO_STREAMING,
+    ITF_NUM_HID,
     ITF_NUM_TOTAL
 };
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO_MIC_TWO_CH_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO_MIC_TWO_CH_DESC_LEN + TUD_HID_DESC_LEN)
 
 #if TU_CHECK_MCU(OPT_MCU_LPC175X_6X, OPT_MCU_LPC177X_8X, OPT_MCU_LPC40XX)
 // LPC 17xx and 40xx endpoint type (bulk/interrupt/iso) are fixed by its number
@@ -99,12 +101,28 @@ enum {
 #define EPNUM_AUDIO 0x01
 #endif
 
+// HID 键盘用独立中断端点（Audio 已占用 EP1 IN = 0x81，HID 用 EP2 IN = 0x82）
+#define EPNUM_HID 0x02
+
+//--------------------------------------------------------------------+
+// HID 自定义键盘（PTT：GP2 接地触发）
+//--------------------------------------------------------------------+
+
+// 标准 6KRO 键盘报告描述符；系统识别为普通键盘，可绑定任意按键做 Push-To-Talk
+uint8_t const hid_report_descriptor[] = {
+    TUD_HID_REPORT_DESC_KEYBOARD()
+};
+
 uint8_t const desc_configuration[] = {
     // Config number, interface count, string index, total length, attribute, power in mA
     TUD_CONFIG_DESCRIPTOR(1, ITF_NUM_TOTAL, 0, CONFIG_TOTAL_LEN, 0x00, 100),
 
     // Interface number, string index, EP Out & EP In address, EP size
-    TUD_AUDIO_MIC_TWO_CH_DESCRIPTOR(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_stridx*/ 0, /*_nBytesPerSample*/ 3, /*_nBitsUsedPerSample*/ 3 * 8, /*_epin*/ 0x80 | EPNUM_AUDIO, /*_epsize*/ CFG_TUD_AUDIO_EP_SZ_IN)
+    TUD_AUDIO_MIC_TWO_CH_DESCRIPTOR(/*_itfnum*/ ITF_NUM_AUDIO_CONTROL, /*_stridx*/ 0, /*_nBytesPerSample*/ 3, /*_nBitsUsedPerSample*/ 3 * 8, /*_epin*/ 0x80 | EPNUM_AUDIO, /*_epsize*/ CFG_TUD_AUDIO_EP_SZ_IN),
+
+    // HID 自定义键盘接口（PTT：GP2 接地触发），独立中断端点 0x82，识别为 boot 键盘
+    // TUD_HID_DESCRIPTOR 第 7 参 = 轮询间隔（FS 下单位 ms），10 = 10ms
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_KEYBOARD, sizeof(hid_report_descriptor), 0x80 | EPNUM_HID, 16, 10)
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -182,4 +200,36 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid)
     _desc_str[0] = (uint16_t)((TUSB_DESC_STRING << 8) | (2 * chr_count + 2));
 
     return _desc_str;
+}
+
+//--------------------------------------------------------------------+
+// HID 回调（PTT：GP2 接地触发）
+//--------------------------------------------------------------------+
+
+// 返回 HID 报告描述符
+uint8_t const* tud_hid_descriptor_report_cb(uint8_t instance)
+{
+    (void)instance;
+    return hid_report_descriptor;
+}
+
+// 主机 GET_REPORT：本设备无输入报告缓存，返回长度 0（栈会 STALL）
+uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t* buffer, uint16_t reqlen)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)reqlen;
+    return 0;
+}
+
+// 主机 SET_REPORT（如键盘 LED 输出）：本设备无需处理
+void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id, hid_report_type_t report_type, uint8_t const* buffer, uint16_t bufsize)
+{
+    (void)instance;
+    (void)report_id;
+    (void)report_type;
+    (void)buffer;
+    (void)bufsize;
 }

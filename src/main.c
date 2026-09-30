@@ -12,6 +12,8 @@
 #include "rec_buffer.h"
 #include "tusb.h"
 #include "tusb_config.h"
+#include "class/hid/hid_device.h"   // HID device API：tud_hid_keyboard_report / tud_hid_ready / HID_KEY_*
+#include "hardware/gpio.h"   // GP2 按键输入
 
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
@@ -44,6 +46,17 @@ audio_control_range_4_n_t(1) sampleFreqRng; // Sample frequency range state
 
 void led_blinking_task(void);
 void audio_task(void);
+void hid_task(void);
+
+// PTT 按键：GP2，接地触发（内部上拉，外部把按钮接到 GND）
+#define GPIO_PTT 2
+// PTT 触发时发送的键组合：Win(左 GUI) + ` 同时按下，模拟"对讲机"效果。
+//   GP2 接地(低电平=按下) -> 同时按下 Win+`；GP2 断开接地(高电平=松开) -> 同时松开 Win+`。
+// 想换组合改这里：
+//   PTT_MODIFIER ：Win=0x08(左GUI)、左Ctrl=0x01、左Alt=0x04，可 OR 多个（如 Win+Alt=0x08|0x04）
+//   PTT_KEYCODE  ：`=0x35、空格=0x2C、Tab=0x2B、Esc=0x29、F13=0x68
+#define PTT_MODIFIER 0x08   // 左 GUI（Windows 键）
+#define PTT_KEYCODE  0x35   // Grave Accent / 反引号 `
 
 int main(void)
 {
@@ -71,6 +84,10 @@ int main(void)
         board_init_after_tusb();
     }
 
+    gpio_init(GPIO_PTT);
+    gpio_set_dir(GPIO_PTT, GPIO_IN);
+    gpio_pull_up(GPIO_PTT);
+
     rec_init();
 
     sampFreq = AUDIO_SAMPLE_RATE;
@@ -85,6 +102,7 @@ int main(void)
         tud_task();
         led_blinking_task();
         audio_task();
+        hid_task();
     }
 }
 
@@ -437,4 +455,50 @@ void led_blinking_task(void)
     }
 
     led_state = 1 - led_state; // toggle
+}
+
+//--------------------------------------------------------------------+
+// HID PTT 任务：GP2 接地时发送键盘按下，松开发送释放（带去抖与重试）
+//--------------------------------------------------------------------+
+static bool ptt_current = false;   // 去抖后的物理状态
+static bool ptt_reported = false;  // 已成功上报给主机状态
+static uint32_t ptt_debounce_ms = 0;
+
+void hid_task(void)
+{
+    if (!tud_hid_ready())
+        return;
+
+    bool low = !gpio_get(GPIO_PTT); // 接地=低电平=按下
+    uint32_t now = board_millis();
+
+    // 边沿去抖（30ms）
+    if (low != ptt_current && (now - ptt_debounce_ms) > 30) {
+        ptt_debounce_ms = now;
+        ptt_current = low;
+    }
+
+    // 状态与上一次上报不一致则发送（tud_hid_keyboard_report 忙时返回 false，下个循环重试）
+    if (ptt_current != ptt_reported) {
+        uint8_t keycode[6] = {0};
+        bool ok;
+        if (ptt_current) {
+            keycode[0] = PTT_KEYCODE;
+            // 同时按下 Win(PTT_MODIFIER) + 键(PTT_KEYCODE)，即"对讲机"触发
+            ok = tud_hid_keyboard_report(0, PTT_MODIFIER, keycode);
+        } else {
+            // 同时松开 Win + 键
+            ok = tud_hid_keyboard_report(0, 0, NULL);
+        }
+        if (ok)
+            ptt_reported = ptt_current;
+    }
+}
+
+// 报告发送完成回调（保留，避免未定义弱符号告警）
+void tud_hid_report_sent_cb(uint8_t instance, uint8_t const* report, uint8_t len)
+{
+    (void)instance;
+    (void)report;
+    (void)len;
 }
