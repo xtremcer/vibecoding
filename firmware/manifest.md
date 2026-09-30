@@ -33,6 +33,35 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## voice_clear / v0.4（voice_clear 分支 · 左右声道清晰 + 音质提升）
+
+> 分支：`voice_clear`（从 `master` v0.3 基线切出）。纯音频固件（**无 HID / 无 PTT**），唯一改动是 `rec_take()` 改为「自动选槽、左右都响」，修复单 INMP441 浮空槽噪声、提升音质。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_v0.4.uf2` / `i2s_mic_v0.4.elf` |
+| 版本 | 0.4（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256（本分支重编） | `0c6f28d3f5b02761090a83d273a9de297878776b8c2005a039760fd64453a01f` |
+| SHA256（作者原厂预编译） | `3b4b83c637d2e6d54b7a2452a0ef9aa3d75d7b3c8a6152db87dd106912432624`（仅供对照，见下注） |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10`（与 v0.3 同，音频独占身份） |
+| 平台 | RP2040（Pico），family ID `rp2040` |
+| 源码 | 根目录 `src/`（来自 `mic_firmware_src_LR_clear.zip` 的 `vibecoding-mic/`，仅 `rec_buffer.c` 的 `rec_take()` 有改动） |
+| I²S 引脚 | SD=GP7(Pin10)、SCK(BCK)=GP8(Pin11)、WS(LRCLK)=GP9(Pin12)（实际硬件接线） |
+| 音频 | UAC2，48 kHz / 24-bit / 2 声道；`rec_take()` 取左右两槽绝对值较大者复制成双声道（隔离浮空槽噪声） |
+| HID/PTT | 无（`CFG_TUD_HID 0`），与 ptt 分支不同 |
+| 工具链 | Pico SDK 2.1.1 + ARM GCC 14.2.Rel1 + CMake 3.31.5 + Ninja 1.12.1；pioasm 用预编译版、picotool 用预编译版 |
+| 变更 | 基于 v0.3 音频版；`rec_take()` 由「左槽透传」改为「左右取绝对值较大侧并复制双声道」，解决单边无声/浮空底噪，左右均出声、音质提升；版本 0.3→0.4 |
+
+### 可复现性 / 说明
+
+- 两个 `.uf2` 的 SHA 不同是**正常的**：作者原厂固件在另一台机器编译，ELF 内嵌的时间戳/路径不同；二者源码与 USB 描述符逐字节一致，功能等价。
+- 本机构建环境无宿主 C++ 编译器，已通过将 `src/i2s.pio.h` 预生成并提交、并在 `CMakeLists.txt` 增加 picotool 预编译守卫，使普通 `cmake + ninja` 即可出固件。
+- 详细描述见 `doc/08_voice_clear说明.md`；作者原始改动说明见 `doc/08_voice_clear_改动说明.md`。
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
