@@ -35,25 +35,13 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 # add_executable(i2s_mic main.cpp i2s.cpp NeoPixelConnect.cpp)
-add_executable(i2s_mic
-    src/main.c
-    src/usb_descriptors.c
-    src/led.c
-    src/rec_buffer.c
-    src/i2s.c
-)
+add_executable(i2s_mic main.c usb_descriptors.c led.c rec_buffer.c i2s.c)
 
-pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/i2s.pio)
-pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/src/ws2812.pio)
-
-# I²S 数据引脚(SD)。SCK = +1，WS = +2（PIO 硬约束：SD 必须是编号最小的）。
-# 默认 = 7：SD=GP7(Pin10) / SCK=GP8(Pin11) / WS=GP9(Pin12) —— 实际硬件接线
-# 切换接线（备用板型）：cmake -DI2S_DIN_PIN=18 .. => SD=GP18 / SCK=GP19 / WS=GP20
-set(I2S_DIN_PIN 7 CACHE STRING "I2S SD(din) GPIO; SCK=+1, WS=+2")
-target_compile_definitions(i2s_mic PRIVATE I2S_DIN_PIN=${I2S_DIN_PIN})
+pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/i2s.pio)
+pico_generate_pio_header(i2s_mic ${CMAKE_CURRENT_LIST_DIR}/ws2812.pio)
 
 pico_set_program_name(i2s_mic "i2s_mic")
-pico_set_program_version(i2s_mic "0.3")
+pico_set_program_version(i2s_mic "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(i2s_mic 1)
@@ -71,7 +59,7 @@ target_link_libraries(i2s_mic hardware_i2c
 
 # Add the standard include files to the build
 target_include_directories(i2s_mic PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}
 )
 
 pico_add_extra_outputs(i2s_mic)

@@ -35,12 +35,7 @@
  *   [MSB]     AUDIO | MIDI | HID | MSC | CDC          [LSB]
  */
 #define _PID_MAP(itf, n) ((CFG_TUD_##itf) << (n))
-
-/* Windows 会按 VID/PID 缓存 USB 设备名：只改产品字符串而不改 PID，PC 端显示名不会刷新。
- * 改 PID 可让系统把它当作"新设备"，从而读取新的产品名 "vibecoding-mate mic"。
- * 原 PID 为 0x4010（AUDIO 位），现改为 0x4A10；若日后需再次强制刷新，继续调整末位即可。 */
-#define USB_VID 0xCafe
-#define USB_PID 0x4A10
+#define USB_PID (0x4000 | _PID_MAP(CDC, 0) | _PID_MAP(MSC, 1) | _PID_MAP(HID, 2) | _PID_MAP(MIDI, 3) | _PID_MAP(AUDIO, 4) | _PID_MAP(VENDOR, 5))
 
 //--------------------------------------------------------------------+
 // Device Descriptors
@@ -57,7 +52,7 @@ tusb_desc_device_t const desc_device = {
     .bDeviceProtocol = MISC_PROTOCOL_IAD,
     .bMaxPacketSize0 = CFG_TUD_ENDPOINT0_SIZE,
 
-    .idVendor = USB_VID,
+    .idVendor = 0xCafe,
     .idProduct = USB_PID,
     .bcdDevice = 0x0100,
 
@@ -132,7 +127,7 @@ enum {
 char const* string_desc_arr[] = {
     (const char[]) { 0x09, 0x04 }, // 0: is supported language is English (0x0409)
     "PaniDCorp", // 1: Manufacturer
-    "vibecoding-mate mic", // 2: Product
+    "MicNode_2Ch", // 2: Product
     NULL, // 3: Serials will use unique ID if possible
     "UAC2", // 4: Audio Interface
 };
