@@ -78,5 +78,5 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 | 文件 | `i2s_mic_ptt.uf2` / `i2s_mic_ptt.elf` |
 | 基线 | 与主线 v0.3 一致：GP7/8/9 + PID `0x4A10` + 立体声透明透传 + 设备名 `vibecoding-mate mic` |
 | 附加功能 | PTT：GP2 输入 + 内部上拉，低电平有效，约 5ms 消抖；`rec_take(is_muted() || !ptt_is_pressed(), vol)` —— **按住 PTT 才送音，松开静音** |
-| SHA256 | `f65dab9645cd0b71abf3866a6c08d2ae40c58b4ab1398704eec6cbc703098661` |
+| SHA256 | `85c2e63da5d87942105ce5e0b4e3b280e3cddc80cc04e355ce0fc0811cffe727` |
 | 同步 | 已 `git merge master`（v0.3，GP7/8/9 + PID 修复）合入 ptt |
