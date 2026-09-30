@@ -70,9 +70,14 @@ static const hid_button_t hid_buttons[] = {
     {  5, 0x01, 0x06 }, // GP5  Ctrl + C
     { 20, 0x01, 0x19 }, // GP20 Ctrl + V（改到空闲脚，避开与 I²S dout_pin=6 的冲突）
     { 12, 0x01, 0x0F }, // GP12 Ctrl + L
-    { 13, 0x08, 0x31 }, // GP13 Win + '\'
+    { 13, 0x08, 0x31 }, // GP13 Win + '\'（一键脉冲：按下触发一次，最多保持 1s 自动释放）
 };
 #define HID_BUTTON_COUNT ((int)(sizeof(hid_buttons) / sizeof(hid_buttons[0])))
+
+// GP13(Win+\) 一键脉冲：按下触发一次，最多保持 PULSE_HOLD_MS 后自动释放；
+// 脉冲期间忽略再次按下（阻塞防抖）；长按/短按效果一致。
+#define GPIO_ONESHOT 13
+#define PULSE_HOLD_MS 1000
 
 int main(void)
 {
@@ -508,6 +513,11 @@ static uint32_t btn_raw_change_ms[HID_BUTTON_COUNT];  // 原始状态上次变�
 static uint8_t last_modifier = 0;                     // 上次上报的修饰键
 static uint8_t last_keycode[6] = {0};                 // 上次上报的键码
 
+// GP13(Win+\) 一键脉冲状态
+static bool oneshot_active = false;                   // 脉冲进行中（按住阶段）
+static uint32_t oneshot_end_ms = 0;                   // 脉冲自动释放时刻
+static bool oneshot_prev = false;                     // 上次去抖状态（用于检测按下沿）
+
 void hid_task(void)
 {
     uint32_t now = board_millis();
@@ -523,19 +533,39 @@ void hid_task(void)
         }
     }
 
-    // 2) 汇总成一个 HID 报告：修饰键 OR，键码最多 6 个
+    // 2) GP13(Win+\) 一键脉冲状态机：按下沿启动脉冲(发一次按下)，最多保持 PULSE_HOLD_MS
+    //    后自动释放；脉冲期间忽略再次按下（阻塞防抖）；长按/短按效果一致。
+    bool oneshot_held = false;
+    for (int i = 0; i < HID_BUTTON_COUNT; i++) {
+        if (hid_buttons[i].pin != GPIO_ONESHOT)
+            continue;
+        bool pressed = btn_pressed[i];
+        if (oneshot_active) {
+            if ((int32_t)(now - oneshot_end_ms) >= 0)
+                oneshot_active = false;           // 到时自动释放
+        } else if (pressed && !oneshot_prev) {    // 新的按下沿
+            oneshot_active = true;
+            oneshot_end_ms = now + PULSE_HOLD_MS;
+        }
+        oneshot_prev = pressed;
+        oneshot_held = oneshot_active;
+        break;
+    }
+
+    // 3) 汇总成一个 HID 报告：修饰键 OR，键码最多 6 个（GP13 仅在其脉冲按住阶段计入）
     uint8_t modifier = 0;
     uint8_t keycode[6] = {0};
     int n = 0;
     for (int i = 0; i < HID_BUTTON_COUNT; i++) {
-        if (!btn_pressed[i])
+        bool on = (hid_buttons[i].pin == GPIO_ONESHOT) ? oneshot_held : btn_pressed[i];
+        if (!on)
             continue;
         modifier |= hid_buttons[i].modifier;
         if (hid_buttons[i].keycode && n < 6)
             keycode[n++] = hid_buttons[i].keycode;
     }
 
-    // 3) 与上次上报比较，有变化才发送（HID 忙时下个循环重试）
+    // 4) 与上次上报比较，有变化才发送（HID 忙时下个循环重试）
     if (modifier == last_modifier && memcmp(keycode, last_keycode, sizeof(keycode)) == 0)
         return;
     if (!tud_hid_ready())

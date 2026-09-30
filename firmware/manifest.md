@@ -199,6 +199,23 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led / v1.1（GP13 改一键脉冲：按下触发一次，最多保持 1s 自动释放）
+
+> 分支：`mic_ptt_led`。GP13(Win+\) 改为**一键脉冲**：按下只触发一次 Win+\，最多保持 1 秒后自动释放；脉冲期间再次按下无效（阻塞防抖）；长按/短按效果一致。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.1.uf2` / `i2s_mic_mic_hid_v1.1.elf` |
+| 版本 | 1.1（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `c99bb69cb57df728ef9eee901219ca73017adf279ae96e9db5738aa0e4c9d27e` |
+| 设备名 | `i2s_mic` |
+| VID/PID | `0xCafe` / `0x4A10` |
+| 变更 | `main.c` 新增 GP13 一键脉冲状态机（`GPIO_ONESHOT=13`、`PULSE_HOLD_MS=1000`）：按下沿启动脉冲→发一次 Win+`\`→最多 1s 后自动释放；脉冲期间忽略新按下（阻塞防抖）；需松开后再按才触发下一次。长按/短按效果一致。版本 1.0→1.1 |
+| 备注 | **未 push 到 GitHub**（用户要求仅本地提交） |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
