@@ -52,8 +52,9 @@ typedef enum {
     PHYS_IDLE,      // GP28
 } phys_led_t;
 
-void           state_exec_init(void);                  // 上电：应用初始化展示（boot_led）
-void           state_exec_task(void);                  // 主循环：推进提示音重复/间隔、初始化超时
+void           state_exec_init(void);                  // 上电：应用初始化展示（boot_led），期间由执行器接管 LED
+void           state_exec_release(void);               // 交还本地控制（RESET / 看门狗）：清接管 + 清状态，回 v1.8 手感
+void           state_exec_task(void);                  // 主循环：推进提示音重复/间隔、初始化展示超时
 bool           state_exec_set(app_state_t s);          // 切换状态（触发 LED + 提示音）
 app_state_t    state_exec_get(void);                   // 当前态（ST_COUNT = 还没收到过状态）
 const char*    state_exec_name(app_state_t s);         // "BUSY"/"IDLE"/"AUTH"/"NONE"

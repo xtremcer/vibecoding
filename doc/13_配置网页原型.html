@@ -154,10 +154,10 @@ const KEYS=["KEY_A","KEY_B","KEY_C","KEY_D","KEY_E","KEY_F","KEY_G","KEY_H","KEY
 
 function defaultCfg(){
   const c={version:1,
-    device:{led_polarity:"ACTIVE_HIGH", boot_led:"ALL_ON", boot_timeout_ms:0},
+    device:{led_polarity:"ACTIVE_HIGH", boot_led:"ALL_ON", boot_timeout_ms:5000},
     states:{}, keys:{}, oled:{enabled:false, layout:"PLACEHOLDER"}};
   const sndDef=(score,opt)=>Object.assign({enabled:true,timing:"END",count:3,loop_interval_ms:1000,score:score},opt||{});
-  c.states.busy={led:{standby:"OFF",blink_on_ms:0,blink_off_ms:0}, sound:sndDef("523,200;659,200;784,350")};
+  c.states.busy={led:{standby:"ON", blink_on_ms:0,blink_off_ms:0}, sound:sndDef("523,200;659,200;784,350")};
   c.states.idle={led:{standby:"ON", blink_on_ms:0,blink_off_ms:0}, sound:sndDef("659,300;784,300",{count:1})};
   c.states.auth={led:{standby:"ON", blink_on_ms:300,blink_off_ms:300}, sound:sndDef("880,250;660,450",{timing:"START"})};
   // 默认值取自固件 src/buttons.c 的 btn_configs[]（当前分支最新）

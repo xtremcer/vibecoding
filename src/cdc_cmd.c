@@ -236,8 +236,7 @@ static void cdc_handle_beep_query(void)
 //   看门狗超时自动走这条路，所以"上位机崩了"会表现为三灯全亮的未接管态，很好认。
 static void cdc_release_local(void)
 {
-    status_led_host_control(false);
-    state_exec_init();
+    state_exec_release();
 }
 
 // ---- Phase A1：状态执行器 ----

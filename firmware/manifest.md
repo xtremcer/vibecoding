@@ -366,7 +366,7 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 | 文件 | `i2s_mic_mic_hid_v1.9.uf2` / `i2s_mic_mic_hid_v1.9.elf` |
 | 版本 | 1.9（`pico_set_program_version`） |
 | 编译日期 | 2026-10-02 |
-| SHA256 | `1760eb9ff63037270d0470062db86add5d9563fe480e13dd095c49f6f96859ee` |
+| SHA256 | `7ae84a9eaacfb4d1681aaa170cc807e26aeaae4e0994214ce3997a8be8472563` |
 | USB 结构 | 与 v1.5~v1.8 **完全一致**（total=236 / #if=5 / 5 端点 / PID=0x4a10 / CDC 在 HID 之后），本阶段未动描述符（`decode_uf2_descriptors.py` 已校验） |
 | 新增源码 | `src/state_exec.c` / `src/state_exec.h` |
 | 三态 | `ST_BUSY`（工作中）/ `ST_IDLE`（空闲）/ `ST_AUTH`（待授权），`ST_COUNT=3` |
@@ -374,14 +374,15 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 | 状态→声 | 每态独立 `{enabled, timing(START\|END), count, loop_interval_ms, score}`；`score` 为乐谱文本 `"hz,ms;hz,ms"` |
 | 提示音优先级 | **一次切换只响一段**：`START`(进入态) **优先于** `END`(离开态)。即进入态配了 START → 播进入态的；否则离开态配了 END → 播离开态的。这样 `IDLE→AUTH` 一定响"催授权"而不是被开工短音顶掉；`BUSY→IDLE` 回落响 BUSY 的完成提示音 |
 | 循环提示 | `count>1` 时由 `state_exec_task()` 在 `beep_get_state()==BEEP_OFF` 后按 `loop_interval_ms` 补播（非阻塞，不占主循环） |
-| 编译期默认配置 | BUSY：灯灭，结束提示音×3（`523,200;659,200;784,350`，间隔 1000ms）<br>IDLE：灯常亮，结束提示音×1（`659,300;784,300`）<br>AUTH：灯常亮 + 300/300 闪烁，开始提示音×3（`880,250;660,450`） |
-| 开机显示 | `device.boot_led = ALL_ON`，`boot_timeout_ms = 0`（不自动切换，等主机发 `SET STATE`） |
-| 指令 · 状态 | `SET STATE <BUSY\|IDLE\|AUTH>` → `OK`；`STATE?` → `STATE=BUSY` |
+| 编译期默认配置 | BUSY：灯**常亮**，结束提示音×3（`523,200;659,200;784,350`，间隔 1000ms）<br>IDLE：灯常亮，结束提示音×1（`659,300;784,300`）<br>AUTH：灯常亮 + 300/300 闪烁，开始提示音×3（`880,250;660,450`） |
+| 开机显示 | `device.boot_led = ALL_ON`，`boot_timeout_ms = 5000`：上电三灯全亮 **5 秒**，期间执行器**接管** LED；超时仍没等到 `SET STATE` 就交还本地（idle 亮，PTT 可用）。`0` = 永不交还 |
+| 指令 · 状态 | `SET STATE <BUSY\|IDLE\|AUTH>` → `OK`；`STATE?` → `STATE=BUSY`（未设过回 `STATE=NONE`） |
 | 指令 · 蜂鸣器 | 新增 `beep_play_score("<乐谱文本>")`（内部最多 16 音符）；**v1.8 的 `BEEP PLAY 1/2/3` 全部保留**，向后兼容 |
-| 指令 · 交还 | `RESET` → `OK`：清接管标志 **并复位执行器**（`STATE?` 回到 `NONE`，灯回到上电 ALL_ON 展示）。5s 看门狗超时也走这条路，所以"上位机崩了"会表现为三灯全亮的未接管态，一眼可辨 |
+| 指令 · 交还 | `RESET` → `OK`：清接管标志 **并交还本地**（`STATE?` 回 `NONE`，灯回本地默认 idle 亮，PTT 恢复驱动 busy）。5s 看门狗超时、`boot_timeout_ms` 超时都走这条路 |
 | 错误码 | 补了完整错误码表（`src/cdc_cmd.h`）：1=未知指令 / 2=行超长超时 / 3=灯名不认识 / **4=枚举值非法** / 5=缺参数 / 6=配置非法(A2) |
 | 兼容性 | `state_exec_init()` **故意不置 `host_control`**，因此首次 `SET STATE` 之前，v1.8 的「按 PTT → busy 灯亮、松开灭」本地行为完整保留 |
-| 验收脚本 | `tools/cdc_state_selftest.py`（自动断言 IDN/STATE/SET/错误码，并按秒停留让你看灯听音） |
+| 验收脚本 | `tools/cdc_state_selftest.py`（自动断言 IDN/STATE/SET/错误码 **+ `LED?` 回读三灯物理电平 + `BEEP?` 轮询发声段数**，只有音色需要人耳判断） |
+| 首版实测抓到并已修的 2 个 bug | ① **BUSY 态三灯全灭**：默认 `busy.led.standby` 误设为 `OFF`，切到 BUSY 后看不出是哪盏亮 → 改 `ON`。<br>② **上电"三灯全亮"只亮两盏**：`state_exec_init()` 不置 `host_control`，主循环里 `status_led_set(LED_BUSY, !gpio_get(PIN_PTT))` 每帧把 busy 拉灭 → 改为展示期间接管，5s 后交还本地。<br>两个都是"指令全回 OK、灯却是错的"，所以验收脚本从此一律用 `LED?` 回读，不靠眼睛 |
 | 未改动 | 描述符、`rec_buffer.c` / `i2s.c` / `buttons.c` / `led.c` / `oled.c` / `status_led.c` / `beep.c` 的既有 API |
 | 依赖文档 | `doc/12_产品需求与技术栈.md`（§5.3 schema、§5.6 默认宏映射）、`doc/13_配置网页原型.html`（Phase B 参照 UI） |
 | 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.8.uf2` |

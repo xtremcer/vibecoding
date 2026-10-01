@@ -11,9 +11,10 @@
 //   A2 会被 JSON 配置覆盖；A3 起持久化到 LittleFS；缺失/损坏就回退到这里。
 //--------------------------------------------------------------------+
 static const state_cfg_t CFG[ST_COUNT] = {
-    // BUSY：执行中。待机灭、不闪；提示音在「结束时」播 3 次（= 任务完成提示，执行中绝不出声）
+    // BUSY：执行中。待机亮、不闪；提示音在「结束时」播 3 次（= 任务完成提示，执行中绝不出声）
+    //   ★ standby 必须是 ON：三颗灯各占一态、互斥，"工作中"就得看得见是哪颗在亮。
     [ST_BUSY] = {
-        .led   = { .standby_on = false, .blink_on_ms = 0,   .blink_off_ms = 0   },
+        .led   = { .standby_on = true,  .blink_on_ms = 0,   .blink_off_ms = 0   },
         .sound = { .enabled = true, .at_start = false, .count = 3, .loop_interval_ms = 1000,
                    .score = "523,200;659,200;784,350" },
     },
@@ -33,7 +34,12 @@ static const state_cfg_t CFG[ST_COUNT] = {
 
 // ---- device 段（编译期默认）----
 #define BOOT_LED_ALL_ON   true   // true = ALL_ON 三灯全亮；false = ALL_OFF 三灯全灭
-#define BOOT_TIMEOUT_MS   0      // 0 = 收到首个 SET STATE 前一直保持初始化展示
+
+// 初始化展示时长：上电先按 boot_led 摆灯并**由执行器接管**，
+// 这么久之后若仍没收到 SET STATE，就交还本地控制（回到 v1.8 的 PTT 手感）。
+//   0 = 永不交还（一直保持初始化展示，专心等上位机）
+// 为什么不能一直挂着：接管期间本地 PTT 逻辑被屏蔽，用户没跑上位机时按 PTT 会没反应。
+#define BOOT_TIMEOUT_MS   5000
 
 static const char* STATE_NAMES[ST_COUNT] = { "BUSY", "IDLE", "AUTH" };
 
@@ -42,6 +48,7 @@ static const char* STATE_NAMES[ST_COUNT] = { "BUSY", "IDLE", "AUTH" };
 //--------------------------------------------------------------------+
 static app_state_t cur        = ST_COUNT;   // ST_COUNT = 还没收到过任何状态
 static uint32_t    boot_at_ms = 0;
+static bool        local_mode = false;      // true = 已交还本地控制（PTT 驱动灯），执行器不再摆灯
 
 // 提示音重复调度（第 1 次立即播，剩下 count-1 次按间隔排队）
 static uint8_t       rep_left     = 0;
@@ -118,11 +125,28 @@ void state_exec_init(void)
     cur        = ST_COUNT;
     boot_at_ms = board_millis();
     rep_left   = 0;
+    local_mode = false;
 
-    // 上电初始化展示：三灯全亮（ALL_ON）或全灭（ALL_OFF），
-    // 一直保持到首个 SET STATE 到达（或 BOOT_TIMEOUT_MS 超时转 idle）
+    // 上电初始化展示：三灯全亮（ALL_ON）或全灭（ALL_OFF）。
+    // ★ 必须置 host_control：否则本地 PTT 逻辑每帧都会把 BUSY 灯拉回"PTT 未按=灭"，
+    //   "三灯全亮"根本立不住（实测 LED? 只有 PLAN=1 IDLE=1）。
+    status_led_host_control(true);
     for (int i = 0; i < LED_COUNT; i++)
         status_led_set_mode((status_led_t)i, BOOT_LED_ALL_ON ? LED_MODE_ON : LED_MODE_OFF);
+}
+
+// 交还本地控制：RESET 指令 / CDC 看门狗超时 / 初始化展示超时 都走这里。
+//   清掉主机状态，恢复 v1.8 手感（idle 亮，busy 随后由 PTT 驱动）。
+void state_exec_release(void)
+{
+    cur        = ST_COUNT;
+    rep_left   = 0;
+    local_mode = true;                 // 执行器不再摆灯，等下一个 SET STATE
+
+    status_led_host_control(false);    // 交还：本地按键逻辑重新生效
+    status_led_set(LED_BUSY, false);
+    status_led_set(LED_PLAN, false);
+    status_led_set(LED_IDLE, true);
 }
 
 bool state_exec_set(app_state_t s)
@@ -141,7 +165,8 @@ bool state_exec_set(app_state_t s)
         cue_start(&CFG[cur].sound);
     }
 
-    cur = s;
+    cur        = s;
+    local_mode = false;
     status_led_host_control(true);   // 执行器接管 LED，本地 PTT 逻辑让位
     led_apply(s);
     return true;
@@ -160,9 +185,11 @@ void state_exec_task(void)
         }
     }
 
-    // ---- 初始化展示超时（0 = 不超时，一直保持到首个 SET STATE）----
-    if (cur == ST_COUNT && BOOT_TIMEOUT_MS > 0 &&
+    // ---- 初始化展示超时：仍没等到 SET STATE → 交还本地控制 ----
+    //   不切到 idle 态：切态会置 host_control 并锁死本地 PTT，
+    //   没跑上位机时用户会以为按键坏了。交还本地才是正解。
+    if (cur == ST_COUNT && !local_mode && BOOT_TIMEOUT_MS > 0 &&
         (int32_t)(board_millis() - boot_at_ms) >= BOOT_TIMEOUT_MS) {
-        state_exec_set(ST_IDLE);
+        state_exec_release();
     }
 }
