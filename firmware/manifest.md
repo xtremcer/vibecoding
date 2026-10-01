@@ -312,6 +312,28 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led_key-m_BEEP-LED_CDCs / v1.7（Phase 3：三灯独立 亮/灭/闪 + 看门狗）
+
+> 分支：`mic_ptt_led_key-m_BEEP-LED_CDCs`。**递进开发第 3 步**：三盏灯全部开放。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.7.uf2` / `i2s_mic_mic_hid_v1.7.elf` |
+| 版本 | 1.7（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `593e7d433d1455a8fa902ab88247b469c73c7dcab8b7798d538de4f01349224a` |
+| USB 结构 | 与 v1.5/v1.6 一致（total=236 / #if=5 / 5 端点），本阶段未动描述符 |
+| 指令 · LED | `LED <BUSY\|PLAN\|IDLE\|ALL> ON\|OFF`；`LED <...> BLINK [on_ms [off_ms]]`（省略默认 500/500，只给一个则 on=off；钳位 10~60000ms） |
+| 指令 · 查询 | `LED?` → `BUSY=0 PLAN=0 IDLE=1`（回读每灯的**当前物理状态**，闪烁中会随之变化） |
+| 指令 · 交还 | `RESET` → `OK`，清接管标志并恢复上电默认（idle 亮，busy/plan 灭） |
+| 主机看门狗 | `CDC_HOST_TIMEOUT_MS 5000`：接管状态下 5 秒无任何指令 → 自动 `RESET`，防上位机崩溃后灯卡死 |
+| 上位机 | `tools/cdc_led_panel.py`（tkinter 图形面板：三灯独立控制 + 周期输入 + 状态回读 + 自动重连 + **2s 心跳保活**） |
+| 未改动 | 描述符、`rec_buffer.c` / `i2s.c` / `buttons.c` / `led.c` / `oled.c` / `beep.c` |
+| 注意 | 命令行单次调用（开→发→关）时，5 秒后看门狗会把灯交还本地；图形面板靠心跳保持接管 |
+| 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.6.uf2` |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

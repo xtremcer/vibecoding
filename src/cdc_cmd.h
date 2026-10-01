@@ -17,6 +17,10 @@
 // 半行超时：收到首字符后这么久没等到结束符就丢弃（防上位机发残缺行卡死缓冲）
 #define CDC_CMD_LINE_TIMEOUT_MS 200
 
+// 主机看门狗：接管状态下这么久没收到任何指令，就自动交还本地控制
+// （上位机崩溃 / 拔线后，灯不会永远卡在最后一个状态）
+#define CDC_HOST_TIMEOUT_MS 5000
+
 void cdc_cmd_init(void);   // 复位行缓冲
 void cdc_cmd_task(void);   // 主循环调用：收字节 → 成行 → 分发 → 回显
 
