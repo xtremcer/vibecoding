@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>vibecoding-mate 配置网页原型 v2（子页面 · 反推自 doc/12）</title>
+<style>
+  :root{ --bg:#f5f6f8; --card:#fff; --bd:#e2e5ea; --tx:#1f2430; --sub:#6b7280; --acc:#2563eb; --ok:#16a34a; --warn:#d97706; --mut:#9ca3af; --nav:#111827; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{padding:14px 20px;background:var(--nav);color:#fff}
+  header h1{margin:0;font-size:16px}
+  header p{margin:5px 0 0;color:#9ca3af;font-size:12px}
+  nav{display:flex;gap:4px;flex-wrap:wrap;padding:8px 16px;background:#1f2937;position:sticky;top:0;z-index:5}
+  nav button{background:transparent;color:#cbd5e1;border:1px solid transparent;border-radius:6px;padding:6px 12px;font-size:13px}
+  nav button.active{background:var(--acc);color:#fff}
+  .wrap{display:grid;grid-template-columns:1fr 360px;gap:16px;max-width:1120px;margin:16px auto;padding:0 16px}
+  @media(max-width:880px){.wrap{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-bottom:14px}
+  .card h2{margin:0 0 10px;font-size:15px;border-left:3px solid var(--acc);padding-left:8px}
+  .card h3{margin:12px 0 6px;font-size:13px;color:var(--sub)}
+  .row{display:flex;align-items:center;gap:10px;margin:7px 0;flex-wrap:wrap}
+  label{font-size:13px;color:var(--sub);min-width:118px}
+  input,select,textarea{font:inherit;padding:5px 8px;border:1px solid var(--bd);border-radius:6px;background:#fff;color:var(--tx)}
+  input[type=number]{width:96px}
+  textarea{width:100%;min-height:50px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+  .switch{display:inline-flex;align-items:center;gap:6px}
+  .macro{border:1px dashed var(--bd);border-radius:8px;padding:10px 12px;margin:10px 0}
+  .hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+  button{cursor:pointer;font:inherit;border:1px solid var(--bd);background:#fff;border-radius:6px;padding:5px 10px}
+  button.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+  button.ghost{background:#f3f4f6}
+  button.mini{padding:3px 9px;font-size:12px}
+  .pill{font-size:11px;padding:2px 7px;border-radius:999px;background:#eef2ff;color:#3730a3}
+  .note{font-size:12px;color:var(--mut);margin:4px 0}
+  .state{border:1px solid var(--bd);border-radius:8px;padding:10px 12px;margin:10px 0}
+  .state b{display:block;margin-bottom:6px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  @media(max-width:640px){.grid3{grid-template-columns:1fr}}
+  pre{background:#0b1020;color:#d6e2ff;padding:12px;border-radius:8px;overflow:auto;max-height:70vh;font-size:12px;margin:0}
+  .sticky{position:sticky;top:54px;align-self:start}
+  .ov b{display:inline-block;min-width:120px;color:var(--tx)}
+  .ov div{margin:4px 0}
+  .tag{font-size:11px;color:#fff;background:var(--warn);border-radius:4px;padding:1px 6px;margin-left:6px}
+  .danger{color:var(--warn)} .ok{color:var(--ok)}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+  <h1>vibecoding-mate · 配置网页原型 v2（子页面）</h1>
+  <p>反推自 <b>doc/12 §5</b>。本页用于颗粒度对齐评审，尚未接入设备，试听 / 保存设备为占位。左侧切换子页面，右侧实时 canonical JSON。改任意字段即刷新 JSON。</p>
+</header>
+
+<nav id="nav">
+  <button data-tab="status" class="active">设备状态</button>
+  <button data-tab="led">LED 设置</button>
+  <button data-tab="sound">声音设置</button>
+  <button data-tab="keys">按键设置</button>
+  <button data-tab="oled">OLED 设置</button>
+  <button data-tab="config">配置</button>
+</nav>
+
+<div class="wrap">
+  <div>
+    <!-- 设备状态（只读总览） -->
+    <section id="tab-status">
+      <div class="card">
+        <h2>设备状态（只读总览）</h2>
+        <div class="note">展示当前配置下设备"正在执行"的全部细节，不可修改。改其它页后回到此页看效果。</div>
+        <h3>① 灯光总览</h3><div class="ov" id="ov_led"></div>
+        <h3>② 提示音总览</h3><div class="ov" id="ov_snd"></div>
+        <h3>③ 按键总览</h3><div class="ov" id="ov_keys"></div>
+        <h3>④ OLED</h3><div class="ov" id="ov_oled"></div>
+      </div>
+    </section>
+
+    <!-- LED 设置 -->
+    <section id="tab-led" class="hidden">
+      <div class="card">
+        <h2>LED 设置</h2>
+        <div class="note">每态：待机灯光（亮/灭 = 无闪烁时的稳态）+ 状态闪烁（点亮ms / 熄灭ms，全 0 = 按待机灯光常亮）。</div>
+        <div id="led_states"></div>
+      </div>
+    </section>
+
+    <!-- 声音设置 -->
+    <section id="tab-sound" class="hidden">
+      <div class="card">
+        <h2>声音设置</h2>
+        <div class="note">BUSY / IDLE / AUTH 三态各自独立配置；某态的「提示音效」关掉即静音（<b>无全局总开关</b>）。</div>
+        <div id="snd_states"></div>
+      </div>
+    </section>
+
+    <!-- 按键设置 -->
+    <section id="tab-keys" class="hidden">
+      <div class="card">
+        <h2>按键设置</h2>
+        <div class="note">每键 = 按键1(修饰: 无/Win/Ctrl/Alt/Shift) + 按键2(具体键) + 触发行为 + 单击时长(ms)。<br>
+        · <b>按键1=无</b> → 只映射一个按键(按键2)；<b>按键1≠无</b> → 两个按钮组合(修饰+主键)同时按下释放。<br>
+        · 按键2 列表里<b>没有"无"</b>选项（必有具体键），所以要禁用某个宏，请用该卡的「启用」勾选框。<br>
+        · <b>正常</b>：按下宏=按下对应键，松开宏=松开对应键（跟随物理按住）。<br>
+        · <b>单击</b>：不管物理按多久、保持多久，都只触发一次组合键的按下+弹起；<b>单击时长</b>控制这一次按下的保持时长。</div>
+        <div id="keys_box"></div>
+      </div>
+    </section>
+
+    <!-- OLED 设置 -->
+    <section id="tab-oled" class="hidden">
+      <div class="card">
+        <h2>OLED 设置（后期占位）</h2>
+        <div class="row"><label>启用 OLED</label>
+          <span class="switch"><input type="checkbox" id="oled_en"> <span class="note">Phase D 才实现</span></span></div>
+        <div class="row"><label>布局</label><input type="text" id="oled_layout" value="PLACEHOLDER" disabled></div>
+      </div>
+    </section>
+
+    <!-- 配置 -->
+    <section id="tab-config" class="hidden">
+      <div class="card">
+        <h2>配置</h2>
+        <div class="row">
+          <button class="primary mini" id="btn_import">导入配置</button>
+          <button class="ghost mini" id="btn_export">导出配置</button>
+          <button class="ghost mini" id="btn_default">恢复默认</button>
+          <button class="ghost mini" id="btn_save">保存到设备（占位）</button>
+          <input type="file" id="file_in" accept=".json" style="display:none">
+        </div>
+        <div class="note">下方展示当前配置 JSON（导入后 / 或设备中的配置预览）。</div>
+        <pre id="config_json"></pre>
+      </div>
+    </section>
+  </div>
+
+  <!-- 右侧实时 JSON -->
+  <div class="sticky">
+    <div class="card">
+      <h2>实时配置 JSON</h2>
+      <pre id="json"></pre>
+      <div class="note">canonical 配置，与固件 LittleFS 文本同构（带 version，未知键忽略，缺失→编译期默认）。</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MODS=[["NONE","无"],["LGUI","Win"],["LCTRL","Ctrl"],["LALT","Alt"],["LSHIFT","Shift"]];
+const KEYS=["KEY_A","KEY_B","KEY_C","KEY_D","KEY_E","KEY_F","KEY_G","KEY_H","KEY_I","KEY_J","KEY_K","KEY_L","KEY_M","KEY_N","KEY_O","KEY_P","KEY_Q","KEY_R","KEY_S","KEY_T","KEY_U","KEY_V","KEY_W","KEY_X","KEY_Y","KEY_Z",
+  "KEY_1","KEY_2","KEY_3","KEY_4","KEY_5","KEY_6","KEY_7","KEY_8","KEY_9","KEY_0",
+  "KEY_SPACE","KEY_ENTER","KEY_BACKSPACE","KEY_ESC","KEY_TAB","KEY_GRAVE","KEY_BACKSLASH","KEY_MINUS","KEY_EQUAL",
+  "KEY_LEFTBRACE","KEY_RIGHTBRACE","KEY_SEMICOLON","KEY_APOSTROPHE","KEY_COMMA","KEY_DOT","KEY_SLASH",
+  "KEY_UP","KEY_DOWN","KEY_LEFT","KEY_RIGHT","KEY_HOME","KEY_END","KEY_PGUP","KEY_PGDOWN",
+  "KEY_F1","KEY_F2","KEY_F3","KEY_F4","KEY_F5","KEY_F6","KEY_F7","KEY_F8","KEY_F9","KEY_F10","KEY_F11","KEY_F12"];
+
+function defaultCfg(){
+  const c={version:1,
+    device:{led_polarity:"ACTIVE_HIGH", boot_led:"ALL_ON", boot_timeout_ms:0},
+    states:{}, keys:{}, oled:{enabled:false, layout:"PLACEHOLDER"}};
+  const sndDef=(score,opt)=>Object.assign({enabled:true,timing:"END",count:3,loop_interval_ms:1000,score:score},opt||{});
+  c.states.busy={led:{standby:"OFF",blink_on_ms:0,blink_off_ms:0}, sound:sndDef("523,200;659,200;784,350")};
+  c.states.idle={led:{standby:"ON", blink_on_ms:0,blink_off_ms:0}, sound:sndDef("659,300;784,300",{count:1})};
+  c.states.auth={led:{standby:"ON", blink_on_ms:300,blink_off_ms:300}, sound:sndDef("880,250;660,450",{timing:"START"})};
+  // 默认值取自固件 src/buttons.c 的 btn_configs[]（当前分支最新）
+  c.keys.ptt   ={enabled:true, pin:2,  mod:"LGUI",  key:"KEY_GRAVE",     behavior:"NORMAL", click_ms:1000}; // GP2  Win+`
+  c.keys.macro1={enabled:true, pin:0,  mod:"NONE",  key:"KEY_ENTER",     behavior:"NORMAL", click_ms:1000}; // GP0  Enter
+  c.keys.macro2={enabled:true, pin:1,  mod:"NONE",  key:"KEY_BACKSPACE", behavior:"NORMAL", click_ms:1000}; // GP1  Backspace
+  c.keys.macro3={enabled:true, pin:3,  mod:"NONE",  key:"KEY_ESC",       behavior:"NORMAL", click_ms:1000}; // GP3  Esc
+  c.keys.macro4={enabled:true, pin:4,  mod:"LCTRL", key:"KEY_A",         behavior:"NORMAL", click_ms:1000}; // GP4  Ctrl+A
+  c.keys.macro5={enabled:true, pin:5,  mod:"LCTRL", key:"KEY_C",         behavior:"NORMAL", click_ms:1000}; // GP5  Ctrl+C
+  c.keys.macro6={enabled:true, pin:20, mod:"LCTRL", key:"KEY_V",         behavior:"NORMAL", click_ms:1000}; // GP20 Ctrl+V
+  c.keys.macro7={enabled:true, pin:12, mod:"LCTRL", key:"KEY_L",         behavior:"NORMAL", click_ms:1000}; // GP12 Ctrl+L
+  c.keys.macro8={enabled:true, pin:13, mod:"LGUI",  key:"KEY_BACKSLASH", behavior:"SINGLE", click_ms:1000}; // GP13 Win+\（一键脉冲 1000ms）
+  return c;
+}
+let cfg=defaultCfg();
+
+function modOpts(sel){return MODS.map(m=>`<option value="${m[0]}" ${m[0]===sel?'selected':''}>${m[1]}</option>`).join('');}
+function keyOpts(sel){return KEYS.map(k=>`<option value="${k}" ${k===sel?'selected':''}>${k}</option>`).join('');}
+// 乐谱以原始文本存于 sound.score（如 "523,200;659,200"），无需解析/还原
+
+function renderLED(){
+  const box=document.getElementById('led_states'); box.innerHTML='';
+  for(const k of ['busy','idle','auth']){
+    const s=cfg.states[k];
+    const el=document.createElement('div'); el.className='state';
+    el.innerHTML=`<b>${k.toUpperCase()} 态</b>
+      <div class="row"><label>待机灯光</label>
+        <select data-act="led-stby" data-k="${k}"><option value="ON" ${s.led.standby==='ON'?'selected':''}>亮</option><option value="OFF" ${s.led.standby==='OFF'?'selected':''}>灭</option></select></div>
+      <div class="row"><label>点亮时长(ms)</label><input type="number" min="0" data-act="led-on" data-k="${k}" value="${s.led.blink_on_ms}"></div>
+      <div class="row"><label>熄灭时长(ms)</label><input type="number" min="0" data-act="led-off" data-k="${k}" value="${s.led.blink_off_ms}"></div>`;
+    box.appendChild(el);
+  }
+}
+
+function renderSound(){
+  const box=document.getElementById('snd_states'); box.innerHTML='';
+  for(const k of ['busy','idle','auth']){
+    const s=cfg.states[k].sound;
+    const el=document.createElement('div'); el.className='state';
+    el.innerHTML=`<b>${k.toUpperCase()} 态</b>
+      <div class="row"><label>提示音效</label><span class="switch"><input type="checkbox" data-act="snd-en" data-k="${k}" ${s.enabled?'checked':''}> 开</span></div>
+      <div class="row"><label>提示时机</label>
+        <select data-act="snd-timing" data-k="${k}"><option value="START" ${s.timing==='START'?'selected':''}>开始时</option><option value="END" ${s.timing==='END'?'selected':''}>结束时</option></select></div>
+      <div class="row"><label>提示次数</label><input type="number" min="1" data-act="snd-count" data-k="${k}" value="${s.count}"></div>
+      <div class="row"><label>循环间隔(ms)</label><input type="number" min="0" data-act="snd-loop" data-k="${k}" value="${s.loop_interval_ms}"></div>
+      <div class="row"><label>提示音代码</label></div>
+      <textarea data-act="snd-score" data-k="${k}" placeholder="523,200;659,200;784,350">${s.score}</textarea>
+      <div class="row"><button class="mini ghost" data-act="snd-try" data-k="${k}">▶ 试听播放（占位）</button></div>`;
+    box.appendChild(el);
+  }
+}
+
+function renderKeys(){
+  const box=document.getElementById('keys_box'); box.innerHTML='';
+  const names=['ptt',...Array.from({length:8},(_,i)=>'macro'+(i+1))];
+  for(const n of names){
+    const k=cfg.keys[n]; const isPtt=n==='ptt';
+    const el=document.createElement('div'); el.className='state';
+    el.innerHTML=`<div class="hd"><b>${isPtt?'PTT（对讲键）':'macro'+n.slice(5)}</b>
+      <span class="switch"><input type="checkbox" data-act="key-en" data-n="${n}" ${k.enabled?'checked':''}> 启用</span></div>
+      <div class="row"><label>按键1（修饰）</label><select data-act="key-mod" data-n="${n}">${modOpts(k.mod)}</select></div>
+      <div class="row"><label>按键2（具体键）</label><select data-act="key-key" data-n="${n}">${keyOpts(k.key)}</select></div>
+      <div class="row"><label>触发行为</label>
+        <select data-act="key-beh" data-n="${n}"><option value="NORMAL" ${k.behavior==='NORMAL'?'selected':''}>正常（按下宏=按下键，松开宏=松开键）</option><option value="SINGLE" ${k.behavior==='SINGLE'?'selected':''}>单击（按多久都只触发一次）</option></select></div>
+      <div class="row"><label>单击时长(ms)</label><input type="number" min="1" data-act="key-click" data-n="${n}" value="${k.click_ms}">
+        <span class="note">仅当触发行为=单击时生效：控制那一次组合键按下→弹起的保持时长</span></div>`;
+    box.appendChild(el);
+  }
+}
+
+function txt(v){return v===true?'开':v===false?'关':v;}
+function renderOverview(){
+  const led=cfg.states; 
+  document.getElementById('ov_led').innerHTML=Object.keys(led).map(k=>`<div><b>${k.toUpperCase()}</b>：待机 ${led[k].led.standby==='ON'?'亮':'灭'}；闪烁 ${led[k].led.blink_on_ms}/${led[k].led.blink_off_ms} ms ${led[k].led.blink_on_ms==0&&led[k].led.blink_off_ms==0?'(常亮/常灭)':''}</div>`).join('');
+  const snd=cfg.states;
+  document.getElementById('ov_snd').innerHTML=Object.keys(snd).map(k=>`<div><b>${k.toUpperCase()}</b>：音效 ${snd[k].sound.enabled?'开':'关'}；时机 ${snd[k].sound.timing==='START'?'开始时':'结束时'}；次数 ${snd[k].sound.count}；间隔 ${snd[k].sound.loop_interval_ms}ms；乐谱 ${snd[k].sound.score||'(静音)'}</div>`).join('');
+  const ks=cfg.keys;
+  document.getElementById('ov_keys').innerHTML=Object.keys(ks).map(n=>`<div><b>${n}</b>：${ks[n].enabled?'启用':'禁用'}；${MODS.find(m=>m[0]===ks[n].mod)[1]}+${ks[n].key}；${ks[n].behavior==='NORMAL'?'正常':'单击('+ks[n].click_ms+'ms)'}</div>`).join('');
+  document.getElementById('ov_oled').innerHTML=`<div>启用：${cfg.oled.enabled?'开':'关'}；布局：${cfg.oled.layout}</div>`;
+}
+
+function updatePreview(){
+  const j=JSON.stringify(cfg,null,2);
+  document.getElementById('json').textContent=j;
+  document.getElementById('config_json').textContent=j;
+}
+
+// 事件委托
+document.body.addEventListener('change',e=>{
+  const t=e.target,a=t.dataset.act; if(!a)return;
+  if(a==='oled_en') cfg.oled.enabled=t.checked;
+  else if(a==='led-stby') cfg.states[t.dataset.k].led.standby=t.value;
+  else if(a==='led-on') cfg.states[t.dataset.k].led.blink_on_ms=+t.value||0;
+  else if(a==='led-off') cfg.states[t.dataset.k].led.blink_off_ms=+t.value||0;
+  else if(a==='snd-en') cfg.states[t.dataset.k].sound.enabled=t.checked;
+  else if(a==='snd-timing') cfg.states[t.dataset.k].sound.timing=t.value;
+  else if(a==='snd-count') cfg.states[t.dataset.k].sound.count=Math.max(1,+t.value||1);
+  else if(a==='snd-loop') cfg.states[t.dataset.k].sound.loop_interval_ms=+t.value||0;
+  else if(a==='key-en') cfg.keys[t.dataset.n].enabled=t.checked;
+  else if(a==='key-mod') cfg.keys[t.dataset.n].mod=t.value;
+  else if(a==='key-key') cfg.keys[t.dataset.n].key=t.value;
+  else if(a==='key-beh') cfg.keys[t.dataset.n].behavior=t.value;
+  else if(a==='key-click') cfg.keys[t.dataset.n].click_ms=Math.max(1,+t.value||1);
+  renderOverview(); updatePreview();
+});
+document.body.addEventListener('input',e=>{
+  const t=e.target,a=t.dataset.act; if(a==='snd-score'){cfg.states[t.dataset.k].sound.score=t.value; renderOverview(); updatePreview();}
+});
+document.body.addEventListener('click',e=>{
+  if(e.target.dataset.act==='snd-try') alert('试听占位：Phase B 经 CDC BEEP PREVIEW 下发该乐谱到设备蜂鸣器试播（不写 LittleFS、不改状态）。');
+});
+
+// 导入/导出/恢复默认/保存
+document.getElementById('btn_export').onclick=()=>{const b=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='vibecoding-mate.config.json';a.click();};
+document.getElementById('btn_import').onclick=()=>document.getElementById('file_in').click();
+document.getElementById('file_in').onchange=ev=>{const f=ev.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);cfg=Object.assign(defaultCfg(),o);resync();}catch(err){alert('JSON 解析失败：'+err.message);}};r.readAsText(f);};
+document.getElementById('btn_default').onclick=()=>{cfg=defaultCfg();resync();};
+document.getElementById('btn_save').onclick=()=>alert('保存到设备（占位）：Phase A/B 经 CDC CONFIG SET 把此 JSON 写入 LittleFS。');
+
+// 切换子页面
+document.getElementById('nav').addEventListener('click',e=>{
+  if(e.target.dataset.tab){document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));e.target.classList.add('active');
+    ['status','led','sound','keys','oled','config'].forEach(t=>document.getElementById('tab-'+t).classList.toggle('hidden',t!==e.target.dataset.tab));
+    if(e.target.dataset.tab==='status') renderOverview();
+  }
+});
+
+function resync(){
+  document.getElementById('oled_en').checked=cfg.oled.enabled;
+  renderLED(); renderSound(); renderKeys(); renderOverview(); updatePreview();
+}
+function init(){renderLED();renderSound();renderKeys();renderOverview();updatePreview();}
+init();
+</script>
+</body>
+</html>

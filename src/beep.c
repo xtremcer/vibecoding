@@ -144,6 +144,46 @@ void beep_play(uint8_t n)
     beep_set_freq(play_notes[0].hz);
 }
 
+//--------------------------------------------------------------------+
+// 乐谱播放（Phase A1）
+//   score 格式："频率,时长ms;频率,时长ms;..."，例 "523,200;659,200;784,350"
+//   解析进 RAM 缓冲后按现有非阻塞序列机播放，播完自停。
+//   超出 BEEP_SCORE_MAX 的音符直接截断（配置层保证上限，这里只防御）。
+//--------------------------------------------------------------------+
+#define BEEP_SCORE_MAX 16
+static note_t score_notes[BEEP_SCORE_MAX];
+
+void beep_play_score(const char* score)
+{
+    if (!score || !*score) { beep_off(); return; }
+
+    uint8_t    n = 0;
+    const char* p = score;
+
+    while (*p && n < BEEP_SCORE_MAX) {
+        uint32_t hz = 0, ms = 0;
+        while (*p >= '0' && *p <= '9') { hz = hz * 10u + (uint32_t)(*p - '0'); p++; }
+        if (*p == ',') p++;
+        while (*p >= '0' && *p <= '9') { ms = ms * 10u + (uint32_t)(*p - '0'); p++; }
+        if (hz && ms) {
+            score_notes[n].hz = (uint16_t)hz;
+            score_notes[n].ms = ms;
+            n++;
+        }
+        if (*p == ';') { p++; continue; }
+        break;                              // 分隔符不是 ';' → 认为乐谱结束
+    }
+
+    if (!n) { beep_off(); return; }
+
+    play_notes    = score_notes;
+    play_len      = n;
+    play_idx      = 0;
+    note_start_ms = board_millis();
+    state         = BEEP_PLAYING;
+    beep_set_freq(score_notes[0].hz);
+}
+
 void beep_stop(void)
 {
     beep_off();

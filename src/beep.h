@@ -25,6 +25,7 @@ void beep_off(void);           // 彻底静音（无直流偏置、无微噪声�
 void beep_ms(uint32_t ms);     // 默认音单音 ms 后自停（非阻塞）
 void beep_note(uint16_t hz, uint32_t ms); // 指定音高单音 ms（非阻塞）
 void beep_play(uint8_t n);     // 播放预设旋律 1~3
+void beep_play_score(const char* score); // 播放乐谱 "频率,时长ms;..."（如 "523,200;659,200"），播完自停
 void beep_stop(void);          // 立即停止
 beep_state_t beep_get_state(void);
 uint16_t beep_get_hz(void);    // 当前发声频率（静音时返回 0）

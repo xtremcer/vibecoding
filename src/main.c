@@ -4,6 +4,7 @@
 #include "oled.h"
 #include "beep.h"
 #include "cdc_cmd.h"
+#include "state_exec.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,8 +84,11 @@ int main(void)
     status_led_init();   // 额外状态灯 busy(GP26)/plan(GP27)/idle(GP28)
     oled_init();         // OLED I2C1（SDA=GP10 / SCL=GP11）
     beep_init();         // 蜂鸣器 GP14（需三极管/MOS 驱动）
-    status_led_set(LED_IDLE, true);   // 上电默认：idle 灯亮（预留示例）
-    cdc_cmd_init();                   // CDC 虚拟串口指令模块（上位机 LED/BEEP 控制）
+    // 状态执行器：上电应用「初始化展示」（boot_led = 三灯全亮/全灭）。
+    // 注意：这里**不**置位 host_control，所以首个 SET STATE 到达前，
+    // 本地 PTT→busy 灯的老行为仍然生效（v1.8 手感不变）；一旦收到 SET STATE 才由执行器接管。
+    state_exec_init();
+    cdc_cmd_init();                   // CDC 虚拟串口指令模块（上位机 LED/BEEP/STATE 控制）
 
     rec_init();
 
@@ -102,8 +106,9 @@ int main(void)
         audio_task();
         buttons_task();   // 自定义按键模块（去抖 + 组合键上报）
         cdc_cmd_task();   // CDC 虚拟串口指令解析（非阻塞，只做收/发/分发）
-        status_led_task(); // 状态灯闪烁相位推进（非阻塞）
-        beep_task();      // 蜂鸣器计时（beep_ms）
+        status_led_task();  // 状态灯闪烁相位推进（非阻塞）
+        beep_task();        // 蜂鸣器计时（旋律/单音）
+        state_exec_task();  // 状态执行器：提示音重复/间隔、初始化展示超时
 
         // 本地示例：PTT 按下 → busy 灯亮。
         // 上位机一旦下发过 LED 指令就置位"主机接管"，此时本地逻辑让位，避免两边抢同一盏灯。

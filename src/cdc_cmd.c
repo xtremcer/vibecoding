@@ -6,6 +6,7 @@
 
 #include "bsp/board_api.h"
 #include "beep.h"
+#include "state_exec.h"
 #include "status_led.h"
 #include "tusb.h"
 
@@ -229,13 +230,51 @@ static void cdc_handle_beep_query(void)
     cdc_reply_line(buf);
 }
 
-// 交还本地控制：清接管标志，并把三盏灯恢复到上电默认（idle 亮，其余灭；busy 随后由 PTT 驱动）
+// 交还本地控制：清接管标志，并复位状态执行器。
+//   复位后 STATE? 回到 NONE，灯回到「上电初始化展示」（device.boot_led），
+//   此后由本地逻辑（PTT→busy 灯等）驱动，直到下一个 SET STATE。
+//   看门狗超时自动走这条路，所以"上位机崩了"会表现为三灯全亮的未接管态，很好认。
 static void cdc_release_local(void)
 {
     status_led_host_control(false);
-    status_led_set(LED_BUSY, false);
-    status_led_set(LED_PLAN, false);
-    status_led_set(LED_IDLE, true);
+    state_exec_init();
+}
+
+// ---- Phase A1：状态执行器 ----
+//   SET STATE <BUSY|IDLE|AUTH>  → 切换状态（按配置驱动 LED + 提示音）
+//   STATE?                      → 回当前态
+static int cdc_state_id(const char* s)
+{
+    if (!s) return -1;
+    if (strcmp(s, "BUSY") == 0) return (int)ST_BUSY;
+    if (strcmp(s, "IDLE") == 0) return (int)ST_IDLE;
+    if (strcmp(s, "AUTH") == 0) return (int)ST_AUTH;
+    return -1;
+}
+
+static void cdc_handle_set(char** cur)
+{
+    char* w = cdc_tok(cur);
+    if (!w) { cdc_reply_err(5); return; }          // ERR 5 = 缺参数
+
+    if (strcmp(w, "STATE") == 0) {
+        char* v = cdc_tok(cur);
+        if (!v)  { cdc_reply_err(5); return; }   // ERR 5 = 缺参数
+        int s = cdc_state_id(v);
+        if (s < 0) { cdc_reply_err(4); return; } // ERR 4 = 枚举值非法
+        state_exec_set((app_state_t)s);
+        cdc_reply_ok();
+        return;
+    }
+
+    cdc_reply_err(4);   // ERR 4 = SET 的第二个词不认识
+}
+
+static void cdc_handle_state_query(void)
+{
+    char buf[24];
+    snprintf(buf, sizeof(buf), "STATE=%s", state_exec_name(state_exec_get()));
+    cdc_reply_line(buf);
 }
 
 static void handle_line(char* raw)
@@ -252,7 +291,7 @@ static void handle_line(char* raw)
 
     // ---- 身份查询（也可当心跳用）----
     if (strcmp(w0, "IDN?") == 0) {
-        cdc_reply_line("vibecoding-mate mic v1.8");
+        cdc_reply_line("vibecoding-mate mic v1.9");
         return;
     }
 
@@ -266,6 +305,10 @@ static void handle_line(char* raw)
     // ---- 蜂鸣器控制（Phase 4：PWM 旋律引擎）----
     if (strcmp(w0, "BEEP") == 0)  { cdc_handle_beep(&cur); return; }
     if (strcmp(w0, "BEEP?") == 0) { cdc_handle_beep_query(); return; }
+
+    // ---- 状态执行器（Phase A1）：设备只认状态，不认业务 ----
+    if (strcmp(w0, "SET") == 0)    { cdc_handle_set(&cur); return; }
+    if (strcmp(w0, "STATE?") == 0) { cdc_handle_state_query(); return; }
 
     // 后续阶段在此追加：...
     cdc_reply_err(1);   // ERR 1 = 未知指令
