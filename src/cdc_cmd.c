@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "bsp/board_api.h"
+#include "beep.h"
 #include "status_led.h"
 #include "tusb.h"
 
@@ -173,6 +174,61 @@ static void cdc_handle_led_query(void)
     cdc_reply_line(buf);
 }
 
+// ---- Phase 4：蜂鸣器（PWM 旋律引擎）----
+//   BEEP ON                  → 默认音持续响
+//   BEEP OFF                 → 彻底静音
+//   BEEP STOP                → 立即停止
+//   BEEP <ms>                → 默认音单音 ms 毫秒后自停
+//   BEEP NOTE <hz> <ms>      → 指定音高单音 ms
+//   BEEP PLAY <1|2|3>        → 播放预设旋律
+static void cdc_handle_beep(char** cur)
+{
+    char* sub = cdc_tok(cur);
+    if (!sub) { cdc_reply_err(5); return; }   // ERR 5 = 缺参数
+
+    if (strcmp(sub, "ON") == 0)   { beep_on();   cdc_reply_ok(); return; }
+    if (strcmp(sub, "OFF") == 0)  { beep_off();  cdc_reply_ok(); return; }
+    if (strcmp(sub, "STOP") == 0) { beep_stop(); cdc_reply_ok(); return; }
+
+    if (strcmp(sub, "NOTE") == 0) {
+        char* a = cdc_tok(cur);
+        char* b = cdc_tok(cur);
+        uint16_t hz, ms;
+        if (!a || !b || !cdc_parse_u16(a, &hz) || !cdc_parse_u16(b, &ms)) {
+            cdc_reply_err(5); return;
+        }
+        beep_note(hz, (uint32_t)ms);
+        cdc_reply_ok();
+        return;
+    }
+
+    if (strcmp(sub, "PLAY") == 0) {
+        char* a = cdc_tok(cur);
+        uint16_t n;
+        if (!a || !cdc_parse_u16(a, &n) || n < 1 || n > 3) {
+            cdc_reply_err(5); return;
+        }
+        beep_play((uint8_t)n);
+        cdc_reply_ok();
+        return;
+    }
+
+    // 纯数字 → 默认音定时
+    uint16_t ms;
+    if (cdc_parse_u16(sub, &ms)) { beep_ms((uint32_t)ms); cdc_reply_ok(); return; }
+
+    cdc_reply_err(5);
+}
+
+static void cdc_handle_beep_query(void)
+{
+    char buf[32];
+    beep_state_t st = beep_get_state();
+    const char* name = (st == BEEP_ON) ? "ON" : (st == BEEP_PLAYING) ? "PLAYING" : "OFF";
+    snprintf(buf, sizeof(buf), "STATE=%s NOTE=%u", name, beep_get_hz());
+    cdc_reply_line(buf);
+}
+
 // 交还本地控制：清接管标志，并把三盏灯恢复到上电默认（idle 亮，其余灭；busy 随后由 PTT 驱动）
 static void cdc_release_local(void)
 {
@@ -196,7 +252,7 @@ static void handle_line(char* raw)
 
     // ---- 身份查询（也可当心跳用）----
     if (strcmp(w0, "IDN?") == 0) {
-        cdc_reply_line("vibecoding-mate mic v1.7");
+        cdc_reply_line("vibecoding-mate mic v1.8");
         return;
     }
 
@@ -207,7 +263,11 @@ static void handle_line(char* raw)
     // ---- 交还本地控制 ----
     if (strcmp(w0, "RESET") == 0) { cdc_release_local(); cdc_reply_ok(); return; }
 
-    // 后续阶段在此追加：BEEP / ...
+    // ---- 蜂鸣器控制（Phase 4：PWM 旋律引擎）----
+    if (strcmp(w0, "BEEP") == 0)  { cdc_handle_beep(&cur); return; }
+    if (strcmp(w0, "BEEP?") == 0) { cdc_handle_beep_query(); return; }
+
+    // 后续阶段在此追加：...
     cdc_reply_err(1);   // ERR 1 = 未知指令
 }
 

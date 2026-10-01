@@ -334,6 +334,29 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led_key-m_BEEP-LED_CDCs / v1.8（Phase 4：蜂鸣器改 PWM 旋律引擎）
+
+> 分支：`mic_ptt_led_key-m_BEEP-LED_CDCs`。**递进开发第 4 步**：蜂鸣器从纯 GPIO 直驱改为 **PWM 方波**，驱动无源蜂鸣器演奏真实音高；并通过 CDC 暴露完整 BEEP 指令。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.8.uf2` / `i2s_mic_mic_hid_v1.8.elf` |
+| 版本 | 1.8（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `b58ee7ee1d9b110f6b17febf28eef35b0a323af08fdee6d4fdaefe4fd5ee9e09` |
+| USB 结构 | 与 v1.5~v1.7 一致（total=236 / #if=5 / 5 端点），本阶段未动描述符 |
+| 蜂鸣器硬件 | GP14 → **PWM slice 7 / channel A**（8.4 定点分频，clk_sys=132MHz）；无源蜂鸣器，频率=音调，50% 占空方波 |
+| `beep` 重写 | PWM 频率计算 `div=ceil(132e6/(65535*hz))` 保证 wrap≤65535；**彻底静音三步法**（`set level 0` → `disable slice` → `GPIO 切回 SIO 置低`，杜绝直流偏置/微噪声）；非阻塞旋律状态机 `BEEP_OFF/ON/PLAYING` |
+| 旋律 | 3 段预设：MEL1=C 大调上行(C-E-G-C5)、MEL2=叮咚、MEL3=开机小号 |
+| 指令 · 蜂鸣器 | `BEEP ON`（持续）/ `BEEP OFF` / `BEEP STOP` / `BEEP <ms>`（默认音定时）/ `BEEP NOTE <hz> <ms>`（单音）/ `BEEP PLAY <1\|2\|3>`（旋律）；`BEEP?` → `STATE=ON\|PLAYING\|OFF NOTE=<hz>` |
+| CMake | `target_link_libraries` 新增 `hardware_pwm` |
+| 上位机 | `tools/cdc_beep_selftest.py`（逐条下发 + 心跳保持，供听测） |
+| 未改动 | 描述符、`rec_buffer.c` / `i2s.c` / `buttons.c` / `led.c` / `oled.c` / `status_led.c` |
+| 已知限制 | **看门狗只收回 LED，不静音蜂鸣器**：`BEEP ON` 持续响后若上位机断线不会自动停，记得 `BEEP OFF`；长时间响优先用 `BEEP <ms>` 或旋律。GP0 同时被 UART0 TX 与按键(Enter)占用（既有隐患，未处理） |
+| 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.7.uf2` |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
