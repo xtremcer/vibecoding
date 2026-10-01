@@ -3,6 +3,7 @@
 #include "status_led.h"
 #include "oled.h"
 #include "beep.h"
+#include "cdc_cmd.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,6 +84,7 @@ int main(void)
     oled_init();         // OLED I2C1（SDA=GP10 / SCL=GP11）
     beep_init();         // 蜂鸣器 GP14（需三极管/MOS 驱动）
     status_led_set(LED_IDLE, true);   // 上电默认：idle 灯亮（预留示例）
+    cdc_cmd_init();                   // CDC 虚拟串口指令模块（上位机 LED/BEEP 控制）
 
     rec_init();
 
@@ -99,6 +101,7 @@ int main(void)
         led_blinking_task();
         audio_task();
         buttons_task();   // 自定义按键模块（去抖 + 组合键上报）
+        cdc_cmd_task();   // CDC 虚拟串口指令解析（非阻塞，只做收/发/分发）
         beep_task();      // 蜂鸣器计时（beep_ms）
         status_led_set(LED_BUSY, !gpio_get(PIN_PTT));   // 预留示例：PTT 按下 → busy 灯亮
     }

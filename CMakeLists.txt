@@ -52,6 +52,7 @@ add_executable(i2s_mic
     src/status_led.c
     src/oled.c
     src/beep.c
+    src/cdc_cmd.c
 )
 
 # PIO 头文件已预生成并提交（src/i2s.pio.h 由 pioasm 生成；src/ws2812.pio.h 为手写版本），
@@ -61,7 +62,7 @@ add_executable(i2s_mic
 # （PIO 硬约束：SCK=SD+1、WS=SD+2，SD 必须是编号最小的 GPIO；备用板型 GP18/19/20 已舍弃）
 
 pico_set_program_name(i2s_mic "i2s_mic")
-pico_set_program_version(i2s_mic "1.4")
+pico_set_program_version(i2s_mic "1.5")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(i2s_mic 1)

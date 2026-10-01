@@ -267,6 +267,30 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led_key-m_BEEP-LED_CDCs / v1.5（Phase 1：新增 CDC 虚拟串口）
+
+> 分支：`mic_ptt_led_key-m_BEEP-LED_CDCs`。**递进开发第 1 步**，只打通 CDC 链路，尚未接入 LED/BEEP 控制。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.5.uf2` / `i2s_mic_mic_hid_v1.5.elf` |
+| 版本 | 1.5（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `d7943e45cf8c9ab50a0e2812f168a4fc585743024d3018d4d98de661dda2c846` |
+| VID/PID | `0xCafe` / `0x4A10`（**刻意保持不变**，避免打破 Windows 已有的音频驱动绑定） |
+| USB 结构 | 音频 IAD(ITF0/1) + HID(ITF2) + **CDC IAD(ITF3/4)**，共 **5 个接口** |
+| 配置描述符 | **236 字节**（= 9 + 音频 136 + HID 25 + CDC 66），比 v1.4 的 170 字节**纯追加** |
+| 端点 | 0x81 iso IN 294B（音频） / 0x82 int IN 16B（HID） / **0x83 int IN 8B（CDC 通知）** / **0x03 bulk OUT 64B** / **0x84 bulk IN 64B** —— 共 5 个，RP2040 上限 16 |
+| 新增文件 | `src/cdc_cmd.c/.h`（行文本协议：64B 行缓冲、200ms 半行超时、`IDN?` 回显、其余回 `ERR 1`） |
+| 指令 | 本阶段仅 `IDN?` → `vibecoding-mate mic v1.5` |
+| 变更 | `tusb_config.h`：`CFG_TUD_CDC` 0→1 + FIFO 尺寸；`usb_descriptors.c`：接口枚举/端点宏/描述符项/字符串表；`main.c` 加 `cdc_cmd_init()` 与主循环 `cdc_cmd_task()`；CMake 加 `src/cdc_cmd.c`，版本 1.4→1.5 |
+| 静态校验 | `tools/decode_uf2_descriptors.py` 解码 ELF：`total=236 / #if=5 / 5 端点` ✅；**与 v1.3 逐字节 diff 仅新增 CDC 块，音频与 HID 部分零改动** ✅ |
+| 上位机 | `tools/cdc_host_cli.py`（需 `pip install pyserial`） |
+| 未改动 | `rec_buffer.c` / `i2s.c` / `buttons.c` / `led.c` / `status_led.c` / `oled.c` / `beep.c` 均一字未动 |
+| 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.4.uf2` |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

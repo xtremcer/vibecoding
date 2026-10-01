@@ -83,10 +83,12 @@ enum {
     ITF_NUM_AUDIO_CONTROL = 0,
     ITF_NUM_AUDIO_STREAMING,
     ITF_NUM_HID,
+    ITF_NUM_CDC,      // CDC ACM 控制接口（必须追加在 HID 之后，保证已有接口号不变）
+    ITF_NUM_CDC_DATA, // CDC 数据接口（紧跟控制接口，二者由 IAD 绑定为一组）
     ITF_NUM_TOTAL
 };
 
-#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO_MIC_TWO_CH_DESC_LEN + TUD_HID_DESC_LEN)
+#define CONFIG_TOTAL_LEN (TUD_CONFIG_DESC_LEN + CFG_TUD_AUDIO * TUD_AUDIO_MIC_TWO_CH_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
 
 #if TU_CHECK_MCU(OPT_MCU_LPC175X_6X, OPT_MCU_LPC177X_8X, OPT_MCU_LPC40XX)
 // LPC 17xx and 40xx endpoint type (bulk/interrupt/iso) are fixed by its number
@@ -103,6 +105,12 @@ enum {
 
 // HID 键盘用独立中断端点（Audio 已占用 EP1 IN = 0x81，HID 用 EP2 IN = 0x82）
 #define EPNUM_HID 0x02
+
+// CDC 用 3 个端点：通知(中断 IN) / 数据 OUT / 数据 IN
+// 注意：通知与数据 IN 同为 IN 方向，必须用不同的端点号，否则撞车
+#define EPNUM_CDC_NOTIF 0x83
+#define EPNUM_CDC_OUT   0x03
+#define EPNUM_CDC_IN    0x84
 
 //--------------------------------------------------------------------+
 // HID 自定义键盘（PTT：GP2 接地触发）
@@ -122,7 +130,10 @@ uint8_t const desc_configuration[] = {
 
     // HID 自定义键盘接口（PTT：GP2 接地触发），独立中断端点 0x82，识别为 boot 键盘
     // TUD_HID_DESCRIPTOR 第 7 参 = 轮询间隔（FS 下单位 ms），10 = 10ms
-    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_KEYBOARD, sizeof(hid_report_descriptor), 0x80 | EPNUM_HID, 16, 10)
+    TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_KEYBOARD, sizeof(hid_report_descriptor), 0x80 | EPNUM_HID, 16, 10),
+
+    // CDC ACM 虚拟串口：上位机用它下发 LED/BEEP 指令（Win10+ 自带 usbser.sys，免驱）
+    TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 5, EPNUM_CDC_NOTIF, 8, EPNUM_CDC_OUT, EPNUM_CDC_IN, 64)
 };
 
 // Invoked when received GET CONFIGURATION DESCRIPTOR
@@ -153,6 +164,7 @@ char const* string_desc_arr[] = {
     "vibecoding-mate mic", // 2: Product
     NULL, // 3: Serials will use unique ID if possible
     "UAC2", // 4: Audio Interface
+    "CDC Control", // 5: CDC 虚拟串口接口
 };
 
 static uint16_t _desc_str[32 + 1];

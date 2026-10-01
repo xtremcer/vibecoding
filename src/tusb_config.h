@@ -92,11 +92,24 @@ extern "C" {
 
 //------------- CLASS -------------//
 #define CFG_TUD_AUDIO 1
-#define CFG_TUD_CDC 0
+#define CFG_TUD_CDC 1   // 复合设备：追加一个 CDC ACM 虚拟串口（上位机下发 LED/BEEP 指令）
 #define CFG_TUD_MSC 0
 #define CFG_TUD_HID 1   // 复合设备：额外暴露一个 HID 自定义键盘（GP2 接地触发 PTT）
 #define CFG_TUD_MIDI 0
 #define CFG_TUD_VENDOR 0
+
+//--------------------------------------------------------------------
+// CDC 配置（全速：bulk 最大包 64B；RX 需容纳一整行指令，TX 用于回显）
+//--------------------------------------------------------------------
+#ifndef CFG_TUD_CDC_EP_BUFSIZE
+#define CFG_TUD_CDC_EP_BUFSIZE 64
+#endif
+#ifndef CFG_TUD_CDC_RX_BUFSIZE
+#define CFG_TUD_CDC_RX_BUFSIZE 256
+#endif
+#ifndef CFG_TUD_CDC_TX_BUFSIZE
+#define CFG_TUD_CDC_TX_BUFSIZE 256
+#endif
 
 //--------------------------------------------------------------------
 // AUDIO CLASS DRIVER CONFIGURATION
