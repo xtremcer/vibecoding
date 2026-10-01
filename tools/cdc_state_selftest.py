@@ -18,7 +18,8 @@
   6. RESET           → 立刻交还本地（idle 亮，STATE?=NONE）
 
 用法：
-    python tools/cdc_state_selftest.py
+    python tools/cdc_state_selftest.py            # 常规验收（指令 + 灯 + 发声段数）
+    python tools/cdc_state_selftest.py --boot     # 验证上电初始化展示（会请你重新上电）
 依赖：pip install pyserial
 """
 import sys
@@ -142,7 +143,80 @@ class Dev:
         return bursts
 
 
+def boot_mode():
+    """--boot：验证「上电初始化展示」这条时间敏感的路径。
+
+    1. 请你重新上电；脚本等端口消失 → 等它重新出现；
+    2. 一出现立刻抓 LED?，必须三灯全亮（device.boot_led = ALL_ON）；
+    3. 等过 boot_timeout_ms(5s) 再抓一次，必须已交还本地（only idle 亮）。
+    这条路径只能靠重新上电验证——RESET 走的是"交还本地"，不会重放展示。
+    """
+    before = {p.device for p in find_ports()}
+    if not before:
+        print("当前没看到设备，请先插上，再重跑本命令。")
+        return 1
+    print(f"当前设备：{', '.join(sorted(before))}")
+    print("\n>>> 请现在重新上电（拔插 USB，或按板子复位键）… 我在这儿等你。")
+
+    # 1) 等端口消失
+    t0 = time.time()
+    while time.time() - t0 < 60:
+        if not ({p.device for p in find_ports()} & before):
+            break
+        time.sleep(0.2)
+    else:
+        print("等了 60s 没看到设备掉线，放弃。")
+        return 1
+    print("  设备已掉线，等待重新枚举…")
+
+    # 2) 等重新出现
+    t0 = time.time()
+    port = None
+    while time.time() - t0 < 60:
+        now = {p.device for p in find_ports()}
+        new = now - before
+        if new:
+            port = sorted(new)[0]
+            break
+        if now:      # COM 号没变（同一物理口）
+            port = sorted(now)[0]
+            break
+        time.sleep(0.1)
+    if not port:
+        print("等了 60s 没看到设备重新出现，放弃。")
+        return 1
+
+    print(f"  重新枚举到 {port}，立刻抓灯…")
+    s = open_port(port)
+    d = Dev(s)
+    with s:
+        boot = d.led()
+        print(f"  上电瞬间 LED? -> {boot}")
+        ok_boot = (boot == ("1", "1", "1"))
+        if not ok_boot:
+            FAILS.append(f"上电初始化展示应三灯全亮(ALL_ON)，实得 {boot}")
+        print(f"   [{'PASS' if ok_boot else 'FAIL'}] 上电三灯全亮")
+
+        print("  等 7s 让 boot_timeout_ms(5000) 超时…")
+        time.sleep(7)
+        after = d.led()
+        print(f"  超时后 LED? -> {after}")
+        ok_after = (after == ("0", "0", "1"))
+        if not ok_after:
+            FAILS.append(f"boot 超时后应交还本地(仅 idle 亮)，实得 {after}")
+        print(f"   [{'PASS' if ok_after else 'FAIL'}] 超时交还本地（idle 亮，PTT 可用）")
+
+    print("\n" + "=" * 62)
+    print("✅ boot 展示路径符合预期。" if not FAILS
+          else f"❌ {len(FAILS)} 项不符：\n   - " + "\n   - ".join(FAILS))
+    print("=" * 62)
+    return 1 if FAILS else 0
+
+
 def main():
+    if "--boot" in sys.argv:
+        return boot_mode()
+
     ports = find_ports()
     if not ports:
         sys.exit(f"未找到 VID:PID={HWID_KEY} 的串口。\n"
@@ -177,10 +251,12 @@ def main():
 
         print("\n=== 3. IDLE→AUTH：响 AUTH 的 START 催授权 ×3，PLAN 灯闪 ===")
         d.expect("SET STATE AUTH", "OK", "切到 AUTH")
+        # ★ 顺序要紧：先数发声段数，再做闪烁采样。
+        #   闪烁采样要 10×0.15s≈2s，会把第一遍提示音整段吃掉，导致 count 少算一遍。
+        n = d.beep_seen(7, "催授权音 880/660")
+        if n < 3:
+            FAILS.append(f"催授权音应重复 3 遍，只检测到 {n} 段")
         d.expect_blink(1, "PLAN(GP27)")
-        n = d.beep_seen(6, "催授权音 880/660")
-        if n < 2:
-            FAILS.append(f"催授权音应重复约 3 遍，只检测到 {n} 段")
 
         print("\n=== 4. AUTH→BUSY：应安静（授权已解决）===")
         d.expect("SET STATE BUSY", "OK", "切回 BUSY")
