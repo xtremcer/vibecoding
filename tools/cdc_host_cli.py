@@ -51,6 +51,17 @@ def send(s, line, quiet=False):
     return resp
 
 
+def hold(s, line, sec):
+    """发一条指令后保持连接并心跳 SEC 秒，便于肉眼观察（规避设备端 5s 看门狗）。"""
+    send(s, line)          # send() 自己会打印 "> 指令 / < 响应"
+    print(f"保持 {sec:.0f} 秒（心跳保活），请观察 …")
+    t0 = time.time()
+    while time.time() - t0 < sec:
+        time.sleep(2.0)
+        send(s, "IDN?", quiet=True)
+    print("保持结束。")
+
+
 def main():
     args = sys.argv[1:]
 
@@ -77,6 +88,14 @@ def main():
 
     with s:
         time.sleep(0.05)
+
+        # --hold SEC <指令>：发完保持连接 SEC 秒，方便肉眼观察灯/蜂鸣器
+        if args and args[0] == "--hold":
+            if len(args) < 3:
+                sys.exit("用法：--hold <秒> <指令>")
+            hold(s, " ".join(args[2:]), float(args[1]))
+            return
+
         if args:                                   # 单次指令模式
             send(s, " ".join(args))
             return
