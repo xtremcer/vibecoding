@@ -102,8 +102,14 @@ int main(void)
         audio_task();
         buttons_task();   // 自定义按键模块（去抖 + 组合键上报）
         cdc_cmd_task();   // CDC 虚拟串口指令解析（非阻塞，只做收/发/分发）
+        status_led_task(); // 状态灯闪烁相位推进（非阻塞）
         beep_task();      // 蜂鸣器计时（beep_ms）
-        status_led_set(LED_BUSY, !gpio_get(PIN_PTT));   // 预留示例：PTT 按下 → busy 灯亮
+
+        // 本地示例：PTT 按下 → busy 灯亮。
+        // 上位机一旦下发过 LED 指令就置位"主机接管"，此时本地逻辑让位，避免两边抢同一盏灯。
+        if (!status_led_is_host_control()) {
+            status_led_set(LED_BUSY, !gpio_get(PIN_PTT));
+        }
     }
 }
 

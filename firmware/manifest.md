@@ -291,6 +291,27 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_ptt_led_key-m_BEEP-LED_CDCs / v1.6（Phase 2：单灯 BUSY/GP26 控制）
+
+> 分支：`mic_ptt_led_key-m_BEEP-LED_CDCs`。**递进开发第 2 步**：只开放 BUSY 一盏灯。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v1.6.uf2` / `i2s_mic_mic_hid_v1.6.elf` |
+| 版本 | 1.6（`pico_set_program_version`） |
+| 编译日期 | 2026-10-01 |
+| SHA256 | `77b2354fe6f339bffb82f1809c709a0606ddbf5dfa86bd481f4f7cfbf7a9f03b` |
+| USB 结构 | 与 v1.5 **完全一致**（total=236 / #if=5 / 5 端点），本阶段未动描述符 |
+| `status_led` 新增 | `status_led_set_mode` / `status_led_blink` / `status_led_get_mode` / `status_led_is_lit` / `status_led_task` / `status_led_host_control` / `status_led_is_host_control`。**原有 3 个 API 签名与语义不变** |
+| 闪烁实现 | 每灯独立 `on_ms/off_ms/next_ms` 相位，`status_led_task()` 在主循环非阻塞推进；边界钳位 10~60000 ms |
+| 主机接管 | `status_led_host_control(true)`；`main.c` 中 PTT→busy 灯的本地逻辑加了 `if (!status_led_is_host_control())` 门控，**默认行为不变** |
+| 指令 | `LED BUSY ON` / `LED BUSY OFF` → `OK`；`LED?` → `BUSY=0\|1`；`LED PLAN/IDLE ...` → `ERR 4`（本阶段未开放）；灯名错 `ERR 3`，缺参数 `ERR 5`，未知指令 `ERR 1` |
+| 未改动 | 描述符、`rec_buffer.c` / `i2s.c` / `buttons.c` / `led.c` / `oled.c` / `beep.c` |
+| 已知限制 | 本阶段主机一旦接管就**不会自动交还**（Phase 3 加看门狗） |
+| 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.5.uf2` |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |
