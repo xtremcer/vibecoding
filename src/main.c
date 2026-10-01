@@ -4,6 +4,7 @@
 #include "oled.h"
 #include "beep.h"
 #include "cdc_cmd.h"
+#include "config.h"
 #include "state_exec.h"
 #include <math.h>
 #include <stdio.h>
@@ -81,6 +82,7 @@ int main(void)
     }
 
     buttons_init();      // 初始化所有按键引脚（输入 + 内部上拉），见 buttons.c
+    cfg_init();          // 应用配置（A2：先载入编译期默认；A3 起从 LittleFS 读）
     status_led_init();   // 额外状态灯 busy(GP26)/plan(GP27)/idle(GP28)
     oled_init();         // OLED I2C1（SDA=GP10 / SCL=GP11）
     beep_init();         // 蜂鸣器 GP14（需三极管/MOS 驱动）

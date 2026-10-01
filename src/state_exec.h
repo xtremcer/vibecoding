@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "config.h"
+
 //--------------------------------------------------------------------+
 // 状态执行器（Phase A1）——「设备 = 哑执行器」的落地
 //   设备只认「当前状态」+ 配置，不关心状态从哪来（上位机 / hook / 手动都行）。
@@ -21,26 +23,8 @@ typedef enum {
     ST_COUNT
 } app_state_t;
 
-// ---- 某态的 LED 表现 ----
-typedef struct {
-    bool     standby_on;    // 无闪烁时的稳态：true=亮 false=灭
-    uint16_t blink_on_ms;   // 点亮时长；与 off 同为 0 = 按 standby 常亮/常灭
-    uint16_t blink_off_ms;  // 熄灭时长
-} led_cfg_t;
-
-// ---- 某态的提示音 ----
-typedef struct {
-    bool        enabled;          // 关 = 该态静音（**无全局总开关**）
-    bool        at_start;         // true=进入该态时播(START)；false=该态结束切走时播(END)
-    uint8_t     count;            // 提示次数
-    uint16_t    loop_interval_ms; // 多次之间的循环间隔
-    const char* score;            // 乐谱 "频率,时长ms;..."（空串=静音）
-} snd_cfg_t;
-
-typedef struct {
-    led_cfg_t led;
-    snd_cfg_t sound;
-} state_cfg_t;
+//   表现配置直接复用 config.h 的 cfg_state_t（cfg_led_t + cfg_snd_t），
+//   A1 时这里是本地常量，A2 起改为读 cfg_get()->states[] —— 一份配置，一处定义。
 
 //--------------------------------------------------------------------+
 // 物理 LED 映射（硬件三颗灯：BUSY=GP26 / PLAN=GP27 / IDLE=GP28）
@@ -56,8 +40,9 @@ void           state_exec_init(void);                  // 上电：应用初始�
 void           state_exec_release(void);               // 交还本地控制（RESET / 看门狗）：清接管 + 清状态，回 v1.8 手感
 void           state_exec_task(void);                  // 主循环：推进提示音重复/间隔、初始化展示超时
 bool           state_exec_set(app_state_t s);          // 切换状态（触发 LED + 提示音）
+void           state_exec_reapply(void);               // 配置改了：按新配置重摆当前态的灯（不触发提示音）
 app_state_t    state_exec_get(void);                   // 当前态（ST_COUNT = 还没收到过状态）
 const char*    state_exec_name(app_state_t s);         // "BUSY"/"IDLE"/"AUTH"/"NONE"
-const state_cfg_t* state_exec_cfg(app_state_t s);      // 只读配置（A2 的 CONFIG GET 会用）
+const cfg_state_t* state_exec_cfg(app_state_t s);      // 只读配置（当前生效的那份）
 
 #endif // STATE_EXEC_H

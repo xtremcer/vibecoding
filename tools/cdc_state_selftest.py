@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""State Executor（状态执行器）验收脚本 —— 配合固件 v1.9+ 使用。
+"""State Executor（状态执行器）验收脚本 —— 配合固件 v2.0+ 使用。
 
 逐条下发 SET STATE / STATE?，并对**响应 + 三灯物理电平**做断言，只有声音需要你用耳朵听。
 
@@ -233,7 +233,7 @@ def main():
     with s:
         time.sleep(0.05)
         print("\n=== 0. 身份 / 初始态 ===")
-        d.expect("IDN?", "vibecoding-mate mic v1.9", "固件版本应为 v1.9")
+        d.expect("IDN?", "vibecoding-mate mic v2.0", "固件版本应为 v2.0")
         d.expect("STATE?", "STATE=NONE", "未收到 SET STATE 前为 NONE")
 
         print("\n=== 1. BUSY：BUSY 灯亮，不出声 ===")

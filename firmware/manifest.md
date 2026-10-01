@@ -389,6 +389,30 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 
 ---
 
+## mic_config_base_v2 / v2.0（Phase A2：JSON 配置 + CONFIG GET/SET/DEFAULT）
+
+> 分支：`mic_config_base_v2`。**配置基座第二阶段**：配置从"编译期常量"变成"可经 CDC 下发的运行时数据"。A1 的表现逻辑一行没改，只是 `CFG` 宏从常量表换成了 `cfg_get()->states`——**一份配置，一处定义**。
+
+| 项目 | 值 |
+|---|---|
+| 文件 | `i2s_mic_mic_hid_v2.0.uf2` / `i2s_mic_mic_hid_v2.0.elf` |
+| 版本 | 2.0（`pico_set_program_version`） |
+| 编译日期 | 2026-10-02 |
+| SHA256 | `939c9510077723847a8a3256f722e5433541f37189ee1768cbd151a09df39cea` |
+| USB 结构 | 与 v1.5~v1.9 **完全一致**（total=236 / #if=5 / 5 端点 / PID=0x4a10 / CDC 在 HID 之后）。`CFG_TUD_CDC_RX/TX_BUFSIZE` 是 RAM 环形缓冲，**不影响描述符** |
+| 新增源码 | `src/js_min.{c,h}`（极轻量 JSON 只读扫描器，~150 行，无动态分配）、`src/config.{c,h}`（配置结构 + 默认值 + 校验 + 序列化） |
+| 指令 · 配置 | `CONFIG GET` → `CONFIG BEGIN` + 多行 JSON + `OK`；`CONFIG SET <一行 JSON>` → `OK` 或 `ERR 6 <原因>`；`CONFIG DEFAULT` → `OK` |
+| 校验（失败**绝不动**当前配置） | version 必须 =1；`standby`∈{ON,OFF}；`timing`∈{START,END}；`count`∈0..10；`blink_*`/`loop_interval_ms`/`boot_timeout_ms`∈0..60000；`pin`∈0..29；`mod`∈{NONE,LGUI,LCTRL,LALT,LSHIFT}；`key`∈1..255（无"无"选项）；`behavior`∈{NORMAL,SINGLE}；`click_ms`∈1..60000；`score` < 160 字符 |
+| 前向兼容 | 未知的 section/key **忽略**；缺失的 key **保持原值**（部分更新不误伤）；解析先落到临时对象，全通过才 `cur = t` |
+| 立刻生效 | `CONFIG SET` / `CONFIG DEFAULT` 后调 `state_exec_reapply()`：按新配置重摆当前态的灯，**不播提示音**（改配置不是状态边界） |
+| 修掉的三个坑 | ① 行缓冲 `CDC_CMD_LINE_MAX` 64→1024（否则 700B 的 JSON 直接 `ERR 2` 丢弃）<br>② `CFG_TUD_CDC_TX_BUFSIZE` 256→1024，`CONFIG GET` 逐行 emit 且每行 ≤250 字节（原来一次回 700B 会被静默截断）<br>③ `handle_line()` 的 `cdc_normalize()` 会把整行转大写、破坏 JSON → `CONFIG` 在 normalize **之前**拦下，走原始行 |
+| 未生效 | `keys` 只存不生效：`buttons.c` 仍用编译期 `btn_configs[]`（A2b 再接）。`oled` 仍占位 |
+| 未持久化 | 配置只在 RAM，掉电回默认（**A3** 的 LittleFS 才落盘） |
+| 验收脚本 | `tools/cdc_config_selftest.py`（最硬的一条：`CONFIG GET` 吐出的必须能被 Python `json.loads` 解析） |
+| 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.9.uf2` |
+
+---
+
 ## v0.2（历史版本）
 
 | 项目 | 值 |

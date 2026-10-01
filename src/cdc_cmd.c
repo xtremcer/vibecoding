@@ -6,6 +6,7 @@
 
 #include "bsp/board_api.h"
 #include "beep.h"
+#include "config.h"
 #include "state_exec.h"
 #include "status_led.h"
 #include "tusb.h"
@@ -45,6 +46,18 @@ static void cdc_reply_line(const char* s)
 }
 
 static void cdc_reply_ok(void)      { cdc_reply_line("OK"); }
+
+// 带文字说明的错误（CONFIG SET 校验失败时把原因带回上位机，不然只能猜）
+static void cdc_reply_err_msg(uint8_t c, const char* msg)
+{
+    if (!tud_cdc_connected()) { tud_cdc_write_clear(); return; }
+    char head[8];
+    snprintf(head, sizeof(head), "ERR %u ", (unsigned)(c % 10));
+    tud_cdc_write(head, (uint32_t)strlen(head));
+    if (msg) tud_cdc_write(msg, (uint32_t)strlen(msg));
+    tud_cdc_write("\r\n", 2);
+    tud_cdc_write_flush();
+}
 static void cdc_reply_err(uint8_t c)
 {
     if (!tud_cdc_connected()) {
@@ -276,8 +289,67 @@ static void cdc_handle_state_query(void)
     cdc_reply_line(buf);
 }
 
+// 前缀匹配（忽略大小写 + 前导空白）；命中返回 payload 起点，否则 NULL。
+//   用于 CONFIG SET：它的 payload 是 JSON，**绝不能**走 cdc_normalize（会把键名转大写）。
+static const char* match_cmd(const char* s, const char* pfx)
+{
+    while (*s == ' ' || *s == '\t') s++;
+    for (; *pfx; s++, pfx++) {
+        char a = *s, b = *pfx;
+        if (a >= 'a' && a <= 'z') a = (char)(a - 32);
+        if (b >= 'a' && b <= 'z') b = (char)(b - 32);
+        if (a != b) return NULL;
+    }
+    return s;
+}
+
+// ---- Phase A2：配置 ----
+//   CONFIG GET              → 多行输出当前配置（CONFIG BEGIN … OK）
+//   CONFIG SET <一行 JSON>  → 校验通过才替换；失败 ERR 6 并带回原因
+//   CONFIG DEFAULT          → 恢复编译期默认
+static void cdc_handle_config(const char* payload)
+{
+    if (!payload) { cdc_reply_err(5); return; }
+
+    const char* p;
+    if ((p = match_cmd(payload, "GET")) != NULL) {
+        // TX FIFO 只有 256 字节，一次回 700 字节会被静默截断 → 逐行 emit
+        cdc_reply_line("CONFIG BEGIN");
+        cfg_dump(cdc_reply_line);
+        cdc_reply_ok();
+        return;
+    }
+    if ((p = match_cmd(payload, "DEFAULT")) != NULL) {
+        cfg_reset_default();
+        state_exec_reapply();     // 让新默认立刻作用到当前态的灯
+        cdc_reply_ok();
+        return;
+    }
+    if ((p = match_cmd(payload, "SET")) != NULL) {
+        while (*p == ' ' || *p == '\t') p++;
+        if (!*p) { cdc_reply_err(5); return; }
+
+        char err[96];
+        if (!cfg_apply_json(p, err, sizeof(err))) {
+            cdc_reply_err_msg(6, err);   // 配置**未被采用**，保持原样
+            return;
+        }
+        state_exec_reapply();     // 新配置立刻作用到当前态的灯
+        cdc_reply_ok();
+        return;
+    }
+    cdc_reply_err(5);
+}
+
 static void handle_line(char* raw)
 {
+    // ★ CONFIG 必须走原始行：JSON 里有小写键名和带小写的字符串值，
+    //   经 cdc_normalize() 转大写后就废了。所以在这里就拦下来。
+    {
+        const char* p = match_cmd(raw, "CONFIG");
+        if (p) { cdc_handle_config(p); return; }
+    }
+
     char* cmd = cdc_normalize(raw);
     if (*cmd == 0) return;                 // 空行
 
@@ -290,7 +362,7 @@ static void handle_line(char* raw)
 
     // ---- 身份查询（也可当心跳用）----
     if (strcmp(w0, "IDN?") == 0) {
-        cdc_reply_line("vibecoding-mate mic v1.9");
+        cdc_reply_line("vibecoding-mate mic v2.0");
         return;
     }
 

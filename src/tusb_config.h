@@ -104,11 +104,14 @@ extern "C" {
 #ifndef CFG_TUD_CDC_EP_BUFSIZE
 #define CFG_TUD_CDC_EP_BUFSIZE 64
 #endif
+// A2 起要整行收发配置 JSON（约 700 字节）：
+//   RX 要装得下一整行（否则半行超时会把它丢掉），TX 要装得下一次 CONFIG GET。
+//   只改 RAM 里的环形缓冲，**不影响 USB 描述符**（端点 maxpkt 仍是 64）。
 #ifndef CFG_TUD_CDC_RX_BUFSIZE
-#define CFG_TUD_CDC_RX_BUFSIZE 256
+#define CFG_TUD_CDC_RX_BUFSIZE 1024
 #endif
 #ifndef CFG_TUD_CDC_TX_BUFSIZE
-#define CFG_TUD_CDC_TX_BUFSIZE 256
+#define CFG_TUD_CDC_TX_BUFSIZE 1024
 #endif
 
 //--------------------------------------------------------------------

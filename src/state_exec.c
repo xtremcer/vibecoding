@@ -4,42 +4,17 @@
 
 #include "bsp/board_api.h"
 #include "beep.h"
+#include "config.h"
 #include "status_led.h"
 
 //--------------------------------------------------------------------+
-// 编译期内置默认配置（与 doc/12 §5.3 示例逐项一致）
-//   A2 会被 JSON 配置覆盖；A3 起持久化到 LittleFS；缺失/损坏就回退到这里。
+// A2 起：表现配置不再写死在这里，一律读 cfg_get()->states[]。
+//   默认值在 config.c 的 DEF（与 doc/12 §5.3 逐项对齐），
+//   CONFIG SET 下发后这里读到的就是新值 —— 本文件不需要任何改动。
 //--------------------------------------------------------------------+
-static const state_cfg_t CFG[ST_COUNT] = {
-    // BUSY：执行中。待机亮、不闪；提示音在「结束时」播 3 次（= 任务完成提示，执行中绝不出声）
-    //   ★ standby 必须是 ON：三颗灯各占一态、互斥，"工作中"就得看得见是哪颗在亮。
-    [ST_BUSY] = {
-        .led   = { .standby_on = true,  .blink_on_ms = 0,   .blink_off_ms = 0   },
-        .sound = { .enabled = true, .at_start = false, .count = 3, .loop_interval_ms = 1000,
-                   .score = "523,200;659,200;784,350" },
-    },
-    // IDLE：闲置。待机亮、不闪；提示音在「结束时」播 1 次
-    [ST_IDLE] = {
-        .led   = { .standby_on = true, .blink_on_ms = 0,   .blink_off_ms = 0   },
-        .sound = { .enabled = true, .at_start = false, .count = 1, .loop_interval_ms = 1000,
-                   .score = "659,300;784,300" },
-    },
-    // AUTH：需授权。待机亮 + 300/300 闪；提示音在「开始时」播 3 次（持续轻催直到解决/超时）
-    [ST_AUTH] = {
-        .led   = { .standby_on = true, .blink_on_ms = 300, .blink_off_ms = 300 },
-        .sound = { .enabled = true, .at_start = true,  .count = 3, .loop_interval_ms = 1000,
-                   .score = "880,250;660,450" },
-    },
-};
-
-// ---- device 段（编译期默认）----
-#define BOOT_LED_ALL_ON   true   // true = ALL_ON 三灯全亮；false = ALL_OFF 三灯全灭
-
-// 初始化展示时长：上电先按 boot_led 摆灯并**由执行器接管**，
-// 这么久之后若仍没收到 SET STATE，就交还本地控制（回到 v1.8 的 PTT 手感）。
-//   0 = 永不交还（一直保持初始化展示，专心等上位机）
-// 为什么不能一直挂着：接管期间本地 PTT 逻辑被屏蔽，用户没跑上位机时按 PTT 会没反应。
-#define BOOT_TIMEOUT_MS   5000
+#define CFG         (cfg_get()->states)
+#define BOOT_ALL_ON (cfg_get()->device.boot_all_on)
+#define BOOT_TIMEOUT_MS ((int32_t)cfg_get()->device.boot_timeout_ms)
 
 static const char* STATE_NAMES[ST_COUNT] = { "BUSY", "IDLE", "AUTH" };
 
@@ -64,7 +39,7 @@ const char* state_exec_name(app_state_t s)
     return (s < ST_COUNT) ? STATE_NAMES[s] : "NONE";
 }
 
-const state_cfg_t* state_exec_cfg(app_state_t s)
+const cfg_state_t* state_exec_cfg(app_state_t s)
 {
     return (s < ST_COUNT) ? &CFG[s] : NULL;
 }
@@ -90,7 +65,7 @@ static status_led_t phys_of(app_state_t s)
 // 只应用 LED（不碰蜂鸣器）
 static void led_apply(app_state_t s)
 {
-    const state_cfg_t* c = &CFG[s];
+    const cfg_state_t* c = &CFG[s];
     status_led_t       mine = phys_of(s);
 
     // 三态各占一颗、互斥：先全灭再点亮当前态那一颗
@@ -105,7 +80,7 @@ static void led_apply(app_state_t s)
 }
 
 // 播一段提示音（含重复次数调度）
-static void cue_start(const snd_cfg_t* snd)
+static void cue_start(const cfg_snd_t* snd)
 {
     if (!snd || !snd->enabled || !snd->score || !*snd->score) return;
 
@@ -132,7 +107,7 @@ void state_exec_init(void)
     //   "三灯全亮"根本立不住（实测 LED? 只有 PLAN=1 IDLE=1）。
     status_led_host_control(true);
     for (int i = 0; i < LED_COUNT; i++)
-        status_led_set_mode((status_led_t)i, BOOT_LED_ALL_ON ? LED_MODE_ON : LED_MODE_OFF);
+        status_led_set_mode((status_led_t)i, BOOT_ALL_ON ? LED_MODE_ON : LED_MODE_OFF);
 }
 
 // 交还本地控制：RESET 指令 / CDC 看门狗超时 / 初始化展示超时 都走这里。
@@ -159,9 +134,10 @@ bool state_exec_set(app_state_t s)
     //   而"离开 IDLE"这种只是新任务开始的轻微提示，被压掉无伤大雅。
     //   默认配置下二者不冲突：BUSY→IDLE 时 IDLE 是 END，于是回落到 BUSY 的 END，
     //   播的正是"任务完成"提示音——符合"只在状态结束边界出声、执行中绝不骚扰"。
-    if (CFG[s].sound.enabled && CFG[s].sound.at_start) {
+    if (CFG[s].sound.enabled && CFG[s].sound.timing == CFG_TIMING_START) {
         cue_start(&CFG[s].sound);
-    } else if (cur < ST_COUNT && CFG[cur].sound.enabled && !CFG[cur].sound.at_start) {
+    } else if (cur < ST_COUNT && CFG[cur].sound.enabled &&
+               CFG[cur].sound.timing == CFG_TIMING_END) {
         cue_start(&CFG[cur].sound);
     }
 
@@ -170,6 +146,13 @@ bool state_exec_set(app_state_t s)
     status_led_host_control(true);   // 执行器接管 LED，本地 PTT 逻辑让位
     led_apply(s);
     return true;
+}
+
+// 配置被 CONFIG SET / CONFIG DEFAULT 改了：按新配置重摆灯。
+//   **不播提示音**——改配置不是状态边界，不该出声。
+void state_exec_reapply(void)
+{
+    if (cur < ST_COUNT && !local_mode) led_apply(cur);
 }
 
 void state_exec_task(void)
