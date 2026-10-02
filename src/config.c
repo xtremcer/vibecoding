@@ -5,6 +5,7 @@
 #include <string.h>
 
 #include "js_min.h"
+#include "flash_store.h"      // A3：配置落盘（LittleFS）
 
 //--------------------------------------------------------------------+
 // 编译期默认 —— 与 doc/12 §5.3 / §5.6 逐项对齐
@@ -26,7 +27,8 @@ static const app_config_t DEF = {
                 .sound = { .enabled = true, .timing = CFG_TIMING_START, .count = 3,
                            .loop_interval_ms = 1000, .score = "880,250;660,450" } },
     },
-    // 键位默认取自 src/buttons.c: btn_configs[]（doc/12 §5.6）
+    // 键位默认与 A2b 之前的 buttons.c 编译期映射表一致（doc/12 §5.6）；
+    // buttons.c 现在完全从这里（keys[]）实时读取，故这是键位的唯一真值来源。
     .keys = {
         [0] = { true,  2, CFG_MOD_LGUI,  0x35, CFG_BEH_NORMAL, 1000 },  // PTT   Win+`
         [1] = { true,  0, CFG_MOD_NONE,  0x28, CFG_BEH_NORMAL, 1000 },  // m1    Enter
@@ -52,12 +54,80 @@ static const char* MOD_NAMES[CFG_MOD_COUNT] = { "NONE", "LGUI", "LCTRL", "LALT",
 
 static app_config_t cur;
 
+#define CFG_PERSIST_BUF 4096          // 序列化缓冲（dump≈2400B，留足余量）
+static bool     cfg_loaded = false;   // 开机是否从闪存成功载入了配置
+
+//--------------------------------------------------------------------+
+// 序列化：复用 cfg_dump 的逐行逻辑，把整份配置拼成一个紧凑 JSON 字符串
+//--------------------------------------------------------------------+
+static char*     ser_buf;
+static uint16_t  ser_cap;
+static uint16_t  ser_len;
+
+static void ser_emit(const char* s)
+{
+    uint16_t n = (uint16_t)strlen(s);
+    if (ser_len + n < ser_cap) {
+        memcpy(ser_buf + ser_len, s, n);
+        ser_len += n;
+    }
+}
+
+void cfg_serialize(char* out, uint16_t cap)
+{
+    ser_buf = out; ser_cap = cap; ser_len = 0;
+    cfg_dump(ser_emit);
+    if (ser_len < cap) out[ser_len] = 0;
+    else out[cap - 1] = 0;
+}
+
 //--------------------------------------------------------------------+
 // 对外：基础
 //--------------------------------------------------------------------+
-void cfg_init(void)           { cur = DEF; }
+void cfg_init(void)
+{
+    cur = DEF;                 // 先填编译期默认
+    cfg_loaded = false;
+
+    flash_store_init();        // 挂载 LFS（必要时格式化）
+
+    static char buf[CFG_PERSIST_BUF];
+    int n = flash_store_read_config(buf, sizeof(buf));
+    if (n > 0) {
+        char err[96];
+        // 解析失败（文件损坏）→ 保留默认；成功则标记已从闪存载入
+        if (cfg_apply_json(buf, err, sizeof(err)))
+            cfg_loaded = true;
+    }
+}
+
 void cfg_reset_default(void)  { cur = DEF; }
+
 const app_config_t* cfg_get(void) { return &cur; }
+
+bool cfg_loaded_from_flash(void) { return cfg_loaded; }
+
+// 原子落盘：把当前 cur 序列化成 JSON 写闪存（临时文件 + rename）
+bool cfg_persist(void)
+{
+    static char buf[CFG_PERSIST_BUF];
+    cfg_serialize(buf, sizeof(buf));
+    return flash_store_write_config(buf, (int)strlen(buf));
+}
+
+// 重新从闪存读 config.json 并应用（CONFIG LOAD / 恢复用）
+bool cfg_load_from_flash(void)
+{
+    static char buf[CFG_PERSIST_BUF];
+    int n = flash_store_read_config(buf, sizeof(buf));
+    if (n <= 0) return false;
+    char err[96];
+    if (!cfg_apply_json(buf, err, sizeof(err))) return false;
+    cfg_loaded = true;
+    return true;
+}
+
+bool cfg_flash_mounted(void) { return flash_store_mounted(); }
 
 //--------------------------------------------------------------------+
 // 校验辅助

@@ -56,6 +56,9 @@ add_executable(i2s_mic
     src/state_exec.c
     src/js_min.c
     src/config.c
+    src/lfs/lfs.c          # A3：vendor 的 LittleFS v2.11.3（配置落盘）
+    src/lfs_rp2040.c       # A3：RP2040 片内闪存块设备驱动
+    src/flash_store.c       # A3：LFS 上的配置读写封装
 )
 
 # PIO 头文件已预生成并提交（src/i2s.pio.h 由 pioasm 生成；src/ws2812.pio.h 为手写版本），
@@ -78,6 +81,8 @@ target_link_libraries(i2s_mic hardware_i2c
     hardware_irq
     hardware_pwm
     hardware_clocks
+    hardware_flash       # A3：flash_range_erase/program（LFS 块设备用）
+    hardware_watchdog    # A3：watchdog_reboot（REBOOT 命令）
     tinyusb_device
     tinyusb_board
     pico_rand
@@ -86,6 +91,7 @@ target_link_libraries(i2s_mic hardware_i2c
 # Add the standard include files to the build
 target_include_directories(i2s_mic PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}/src/lfs   # A3：lfs.h / lfs_util.h
 )
 
 pico_add_extra_outputs(i2s_mic)

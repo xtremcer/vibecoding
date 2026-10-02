@@ -114,8 +114,9 @@ int main(void)
 
         // 本地示例：PTT 按下 → busy 灯亮。
         // 上位机一旦下发过 LED 指令就置位"主机接管"，此时本地逻辑让位，避免两边抢同一盏灯。
+        // PTT 脚可经 CONFIG 配置（buttons_ptt_pin()），不再是固定 GP2。
         if (!status_led_is_host_control()) {
-            status_led_set(LED_BUSY, !gpio_get(PIN_PTT));
+            status_led_set(LED_BUSY, !gpio_get(buttons_ptt_pin()));
         }
     }
 }
@@ -460,7 +461,7 @@ void led_blinking_task(void)
     uint8_t r = is_muted() ? 120 : 0; // 静音时偏红，否则纯蓝
     const uint8_t b = 140;
 
-    bool ptt = !gpio_get(PIN_PTT);    // PTT 键接地 = 低电平 = 触发
+    bool ptt = !gpio_get(buttons_ptt_pin());    // PTT 键接地 = 低电平 = 触发（脚可经 CONFIG 配）
     uint32_t now = board_millis();
 
     if (!ptt) {
@@ -491,7 +492,7 @@ void led_blinking_task(void)
 
 //--------------------------------------------------------------------+
 // 自定义按键（去抖 + 组合键上报）已抽到独立模块：src/buttons.c / buttons.h
-//   映射表 btn_configs[] 在 buttons.c，未来用户自由组合设定只需改那张表。
+//   A2b：按键完全由 CONFIG 的 keys[] 驱动，映射表已删除；键位/修饰键/行为/脚均可经 CONFIG 下发。
 //--------------------------------------------------------------------+
 
 // 报告发送完成回调（保留，避免未定义弱符号告警）

@@ -100,4 +100,19 @@ void cfg_reset_default(void);
 // 序列化：逐行 emit（每行 ≤ 200 字节，避开 CDC TX FIFO 只有 256 的坑）
 void cfg_dump(void (*emit)(const char* line));
 
+// 把当前生效配置序列化成一段紧凑 JSON 字符串（cfg_dump 的同款内容，无换行）
+void cfg_serialize(char* out, uint16_t cap);
+
+// 把当前配置原子落盘（CONFIG SET/DEFAULT 后调用；失败返回 false）
+bool cfg_persist(void);
+
+// 重新从闪存读 config.json 并应用（CONFIG LOAD / 恢复用）；成功返回 true
+bool cfg_load_from_flash(void);
+
+// 开机是否从闪存成功载入了配置（诊断用，如 FLASH? 上报）
+bool cfg_loaded_from_flash(void);
+
+// LFS 是否已挂载（诊断用，如 FLASH? 上报）
+bool cfg_flash_mounted(void);
+
 #endif // CONFIG_H

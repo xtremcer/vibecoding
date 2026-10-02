@@ -138,25 +138,27 @@ def main():
 
         print("\n=== C. CONFIG SET 非法值 → ERR 6，且**配置保持不变** ===")
         before = d.cfg_json()
+        # 每个用例都带 "version":1，让固件越过版本检查、真正校验到那个非法字段，
+        # 否则会一律短路成 "missing version" 而测不到字段级校验（以及 ERR 6 的原因文字）。
         bad_cases = [
-            ('{"states":{"busy":{"led":{"standby":"MAYBE"}}}}', "standby 枚举非法"),
-            ('{"states":{"busy":{"sound":{"count":99}}}}',     "count 越界(>10)"),
-            ('{"keys":{"macro1":{"mod":"LWIN"}}}',             "mod 枚举非法"),
-            ('{"keys":{"macro1":{"key":0}}}',                  "key=0（列表无'无'）"),
-            ('{"keys":{"macro1":{"pin":99}}}',                 "pin 越界(>29)"),
-            ('{"keys":{"macro1":{"click_ms":0}}}',             "click_ms=0（最小 1）"),
-            ('{"device":{"boot_led":"ALL_MAYBE"}}',            "boot_led 枚举非法"),
-            ('{"version":2}',                                  "version 不支持(2)"),
-            ('{"states":{"busy":{"led":{"blink_on_ms":70000}}}}', "blink_on_ms 越界"),
+            ('{"version":1,"states":{"busy":{"led":{"standby":"MAYBE"}}}}', "standby 枚举非法"),
+            ('{"version":1,"states":{"busy":{"sound":{"count":99}}}}',     "count 越界(>10)"),
+            ('{"version":1,"keys":{"macro1":{"mod":"LWIN"}}}',             "mod 枚举非法"),
+            ('{"version":1,"keys":{"macro1":{"key":0}}}',                  "key=0（列表无'无'）"),
+            ('{"version":1,"keys":{"macro1":{"pin":99}}}',                 "pin 越界(>29)"),
+            ('{"version":1,"keys":{"macro1":{"click_ms":0}}}',             "click_ms=0（最小 1）"),
+            ('{"version":1,"device":{"boot_led":"ALL_MAYBE"}}',            "boot_led 枚举非法"),
+            ('{"version":2}',                                              "version 不支持(2)"),
+            ('{"version":1,"states":{"busy":{"led":{"blink_on_ms":70000}}}}', "blink_on_ms 越界"),
         ]
         for payload, why in bad_cases:
-            r = d.q("CONFIG SET " + payload.replace(" ", ""))
+            r = d.q("CONFIG SET " + payload)
             ok = r.startswith("ERR 6")
             check(ok, f"{why} → 应 ERR 6（实得 {r!r}）")
             if ok and len(r) <= 5:
                 FAILS.append(f"{why} 的 ERR 6 没带原因文字，上位机没法定位")
 
-        # 缺少 version 段（整份配置里没有 version）
+        # 缺少 version 段（整份配置里没有 version）—— 单独测这条短路分支
         r = d.q('CONFIG SET {"device":{"boot_led":"ALL_OFF"}}')
         check(r.startswith("ERR 6"), f"缺 version → 应 ERR 6（实得 {r!r}）")
 

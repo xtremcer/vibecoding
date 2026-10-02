@@ -38,4 +38,9 @@
 void cdc_cmd_init(void);   // 复位行缓冲
 void cdc_cmd_task(void);   // 主循环调用：收字节 → 成行 → 分发 → 回显
 
+// 给其它模块（如 buttons.c 的 KEYMON 调试回声）用的单行回显出口：
+//   仅在主机真的打开了串口时发出，否则静默丢弃；自动补 \r\n。
+//   与 cdc_reply_line 同逻辑，但对外可见，避免 buttons.c 反向 include 本文件以外再绕。
+void cdc_cmd_send_line(const char* s);
+
 #endif // CDC_CMD_H

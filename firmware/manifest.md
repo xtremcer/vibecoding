@@ -397,18 +397,32 @@ certutil -hashfile build211\i2s_mic.uf2 SHA256
 |---|---|
 | 文件 | `i2s_mic_mic_hid_v2.0.uf2` / `i2s_mic_mic_hid_v2.0.elf` |
 | 版本 | 2.0（`pico_set_program_version`） |
-| 编译日期 | 2026-10-02 |
-| SHA256 | `939c9510077723847a8a3256f722e5433541f37189ee1768cbd151a09df39cea` |
+| 编译日期 | 2026-10-02（**六次构建**：① `939c9510…` 初版有 CONFIG GET 溢出 bug；② `6c754154…` 修复 GET 溢出；③ `78357fed…` 加 A2b 按键配置生效；④ `5adf53b9…` 加 KEYMON 调试回声；⑤ `c3bb2f24…` 加 A3 配置落盘 LittleFS；⑥ `6b153225…` A3 **诊断版**：`FLASH?` 增加 `ERR=<lfs码>`、新增 `FLASH RWTEST` 原始闪存自检、`CONFIG SET/DEFAULT` 落盘失败不再静默回 OK） |
+| SHA256（当前文件，A3 诊断版） | `6b153225331e2df458964b9ceebd40b6368254e100773dfaa0b54c50e7521360` |
+| SHA256（A3 初版，已被覆盖） | `c3bb2f2489d3f24e1d9cb0c38f4ff7f0515f74b796bcc63ff0640e4af2d2f84a`（A3：LittleFS 落盘；**有 `cfg_persist` 静默失败缺陷**，见下） |
+| SHA256（KEYMON 版，已被覆盖） | `5adf53b9801fc5dad45969cd8c957038442a7d187f208e14cc35b639330f498c` |
+| SHA256（A2b 版，已被覆盖） | `78357fedfa639f652f70e7eb160f645297448e2624aa976558d782f0e82ff6f5`（A2b：按键配置生效） |
+| SHA256（GET 修复版，已被覆盖） | `6c754154d8c7020fe8111b599b330f92dc6dcd0d8d939ad77acec67a30ecb839`（修复 CONFIG GET TX FIFO 溢出） |
 | USB 结构 | 与 v1.5~v1.9 **完全一致**（total=236 / #if=5 / 5 端点 / PID=0x4a10 / CDC 在 HID 之后）。`CFG_TUD_CDC_RX/TX_BUFSIZE` 是 RAM 环形缓冲，**不影响描述符** |
 | 新增源码 | `src/js_min.{c,h}`（极轻量 JSON 只读扫描器，~150 行，无动态分配）、`src/config.{c,h}`（配置结构 + 默认值 + 校验 + 序列化） |
 | 指令 · 配置 | `CONFIG GET` → `CONFIG BEGIN` + 多行 JSON + `OK`；`CONFIG SET <一行 JSON>` → `OK` 或 `ERR 6 <原因>`；`CONFIG DEFAULT` → `OK` |
 | 校验（失败**绝不动**当前配置） | version 必须 =1；`standby`∈{ON,OFF}；`timing`∈{START,END}；`count`∈0..10；`blink_*`/`loop_interval_ms`/`boot_timeout_ms`∈0..60000；`pin`∈0..29；`mod`∈{NONE,LGUI,LCTRL,LALT,LSHIFT}；`key`∈1..255（无"无"选项）；`behavior`∈{NORMAL,SINGLE}；`click_ms`∈1..60000；`score` < 160 字符 |
 | 前向兼容 | 未知的 section/key **忽略**；缺失的 key **保持原值**（部分更新不误伤）；解析先落到临时对象，全通过才 `cur = t` |
 | 立刻生效 | `CONFIG SET` / `CONFIG DEFAULT` 后调 `state_exec_reapply()`：按新配置重摆当前态的灯，**不播提示音**（改配置不是状态边界） |
-| 修掉的三个坑 | ① 行缓冲 `CDC_CMD_LINE_MAX` 64→1024（否则 700B 的 JSON 直接 `ERR 2` 丢弃）<br>② `CFG_TUD_CDC_TX_BUFSIZE` 256→1024，`CONFIG GET` 逐行 emit 且每行 ≤250 字节（原来一次回 700B 会被静默截断）<br>③ `handle_line()` 的 `cdc_normalize()` 会把整行转大写、破坏 JSON → `CONFIG` 在 normalize **之前**拦下，走原始行 |
-| 未生效 | `keys` 只存不生效：`buttons.c` 仍用编译期 `btn_configs[]`（A2b 再接）。`oled` 仍占位 |
+| 修掉的三个坑 | ① 行缓冲 `CDC_CMD_LINE_MAX` 64→1024（否则 700B 的 JSON 直接 `ERR 2` 丢弃）<br>② **CONFIG GET 全量序列化约 2400 字节，远超 `CFG_TUD_CDC_TX_BUFSIZE=1024`**——初版把 TX 调到 1024 还不够，`tud_cdc_write()` 满时**静默丢尾**，导致 `macro1` 行被截断、连 `OK` 都丢。真修复：整份配置先 `cfg_dump()` 序列化进 RAM 缓冲（3200B），再由 `cdc_cmd_task()` 里的 `cdc_get_drain()` **按 `tud_cdc_write_available()` 逐行吐出**（非阻塞、自然节流），绝不丢字节。主机断开时自动放弃进行中的 GET<br>③ `handle_line()` 的 `cdc_normalize()` 会把整行转大写、破坏 JSON → `CONFIG` 在 normalize **之前**拦下，走原始行 |
+| 指令 · 调试回声（KEYMON） | `KEYMON ON` → `OK`：此后每次按键按下/松开经 CDC 回 `KEY <槽位> <P脚> DOWN/UP`（如 `KEY PTT P2 DOWN`）；`KEYMON OFF` → `OK` 关闭。**默认关**，正常 HID 上报完全不受影响。用途：不接 HID 监听时，由上位机在串口回声里确认「物理按键被扫到、落到哪个槽、对应哪只脚」。代码：`buttons.c`（`buttons_set_echo`/`buttons_get_echo` + 去抖边沿发 `cdc_cmd_send_line`）、`cdc_cmd.c`（`KEYMON ON/OFF` 分发）、`cdc_cmd.h`（`cdc_cmd_send_line` 对外出口） |
+| 验收脚本 · 按键 | `tools/cdc_keys_probe.py`：自动找 CDC 串口 → `IDN?` 探活 → `KEYMON ON` → 轮询 `KEY ... DOWN/UP` → 对照 `--expect "PTT:2 MACRO2:1 MACRO4:4"` 给出 PASS/FAIL。**上板验收 PASS（COM16，三键全命中）** |
+| 验收脚本 · A3 | `tools/cdc_a3_selftest.py`：FLASH? MOUNT=1 + SET→LOAD→GET round-trip + DEFAULT 落盘 + **REBOOT 真·掉电模拟**（SET 标记值→REBOOT→重枚举→GET 仍见标记值，证明重启后从闪存恢复）。收尾自动 DEFAULT 还原 |
+| 闪存分区 | LFS 放在 RP2040 闪存**末尾 256KB**（`LFS_PART_OFFSET = PICO_FLASH_SIZE_BYTES - 256KB`，block_size=4096、block_count=64）；UF2 烧录只写固件区，不动分区；若走「整片擦除再烧录」会抹掉 LFS（开机自动 lfs_format 回默认） |
+| A3 新增源码 | `src/lfs/lfs.c` + `lfs.h` + `lfs_util.h`（**vendor LittleFS v2.11.3**，SDK 2.1.1 不自带）；`src/lfs_rp2040.c/.h`（片内闪存块设备：read 走 XIP memcpy，prog/erase 走 `flash_range_program/erase`，静态缓存避免 malloc）；`src/flash_store.c/.h`（挂载/格式化/配置读写封装） |
+| 指令 · 落盘 | `CONFIG SET/DEFAULT` 成功后**自动 `cfg_persist()`** 原子落盘（`config.tmp` → `lfs_rename` 覆盖 `config.json`）；新增 `CONFIG LOAD`（重读闪存并应用）、`FLASH?`（回 `MOUNT=<0\|1> LOAD=<0\|1> ERR=<lfs码>`）、`REBOOT`（看门狗复位，验证掉电/重启保留） |
+| 指令 · 闪存诊断 | `FLASH RWTEST` → `RWTEST ERASE=<0\|1> PROG=<0\|1> FIRST=<hex>`：绕过 LFS 直接对分区做「擦除 → 写 0xA5 → 读回」。用来二分故障：`ERASE/PROG=0` → RP2040 闪存本身没写进去；均为 `1` → 闪存没问题，锅在 LFS/上层。会毁掉分区并自动重新格式化（配置回默认，属预期） |
+| **已知缺陷（A3 初版，诊断版已修报告但根因待定性）** | `src/cdc_cmd.c` 的 `CONFIG SET`/`DEFAULT` 原先直接 `cfg_persist();` **不查返回值** → 写不进闪存也回 `OK`；`flash_store_write_config()` 也忽略了 `lfs_file_close()` 返回值（close 才是真正落盘）。导致「阶段1 全绿」是**假阳性**：`CONFIG LOAD` 其实一直回 `ERR 6`，而脚本不查它，RAM 里的 `cur` 仍是 SET 写入的值 → GET 看起来"重载成功"。真实拔插后 count 回默认 3、`FLASH?` 的 `LOAD=0` 才暴露。<br>诊断版已修：SET/DEFAULT 失败回 `ERR 6 persist-failed lfs=<码>`；`flash_store` 记录 `last_err`。<br>**根因怀疑**：`rp2040_prog`/`rp2040_erase` 无条件 `return LFS_ERR_OK`，若 `flash_range_program` 实际没写进去，LFS 会被完全蒙在鼓里（写"成功"、读回垃圾、重启丢失）。待 `FLASH RWTEST` 定性 |
+| 上板验收 | **进行中（截至 10-02 暂停）**：A3 初版 `c3bb2f24…` 阶段1 假阳性、阶段2 掉电后 `count=3`（应为 9）FAIL。已定位两个真 bug（见上「已知缺陷」+ 上位机 `GetCommState` 卡死）。<br>**下一步**：刷 `6b153225…` 后跑三条取证 —— `FLASH?`(看 ERR) → `CONFIG SET …count=9`(看是否报 `persist-failed lfs=<码>`) → `FLASH RWTEST`(定性闪存能否真写)。根因锁定后再改 `rp2040_prog`/分区地址，然后重跑两阶段验收 |
+| 未生效 | `oled` 仍占位（Phase D 才真用）。`keys` **已生效（A2b）**：`buttons.c` 删除编译期 `btn_configs[]`，每帧从 `cfg_get()->keys[]` 实时读取；`CONFIG SET keys` 下一帧即生效（无需 RESET）；`pin` 变更由 `buttons_sync_pins()` 自动重配 GPIO；PTT 脚（keys[0].pin）经 `buttons_ptt_pin()` 暴露给 `main.c`，busy 灯 / 板载 LED 的本地逻辑也改读可配的 PTT 脚 |
 | 未持久化 | 配置只在 RAM，掉电回默认（**A3** 的 LittleFS 才落盘） |
-| 验收脚本 | `tools/cdc_config_selftest.py`（最硬的一条：`CONFIG GET` 吐出的必须能被 Python `json.loads` 解析） |
+| 验收脚本 | `tools/cdc_config_selftest.py`（最硬的一条：`CONFIG GET` 吐出的必须能被 Python `json.loads` 解析）；A2b：`tools/cdc_a2b_selftest.py` |
+| 上板验证 | A2b（SHA `78357fed…`）：`cdc_a2b_selftest.py` + 回归 `cdc_config_selftest.py`/`cdc_state_selftest.py` 全 PASS。注：macro1=Enter 默认 `mod=NONE`（无修饰键），与旧 `btn_configs[1]={0,0,0x28}` 一致，勿误以为 LGUI |
 | 回滚 | 出问题刷回 `i2s_mic_mic_hid_v1.9.uf2` |
 
 ---

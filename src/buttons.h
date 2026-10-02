@@ -5,12 +5,17 @@
 #include <stdint.h>
 
 //--------------------------------------------------------------------+
-// 自定义按键模块
-//   把「按键引脚 → HID 键（修饰键 + 键码）」的映射、去抖、触发行为封装在一起。
-//   未来要让用户自由组合设定，只需修改 buttons.c 里的 btn_configs[] 表即可。
+// 自定义按键模块（A2b：**完全由 CONFIG 的 keys[] 驱动**，不再有编译期映射表）
+//   CONFIG SET 改了 keys 后，下一帧 buttons_task 自动生效：
+//     - 修饰键 / 键码 / 行为 / click_ms 实时读配置；
+//     - pin 变更由 buttons_sync_pins() 自动重配 GPIO（释放旧脚、初始化新脚、清空去抖）。
+//   键位 / 修饰键 / 行为 / 引脚全部可经 CDC 下发（doc/12 §5.3）。
+//
+//   注意：不要用 I²S(GP6/7/8/9)、WS2812(GP16)、板载LED(GP25)、OLED(GP10/11)、蜂鸣器(GP14)
+//        做按键脚，会被这些外设的初始化覆盖 / 互相干扰。
 //--------------------------------------------------------------------+
 
-// ---- HID 修饰键位（可按位 OR 自由组合）----
+// ---- HID 修饰键位（按位 OR 自由组合，与 HID 规范一致）----
 #define MOD_LCTRL  0x01
 #define MOD_LSHIFT 0x02
 #define MOD_LALT   0x04
@@ -20,32 +25,19 @@
 #define MOD_RALT   0x40
 #define MOD_RGUI   0x80
 
-// ---- 触发行为 ----
-typedef enum {
-    BTN_HOLD    = 0,  // 按住保持：按下→发按下；松开→发释放（普通组合键 / PTT）
-    BTN_ONESHOT = 1,  // 一键脉冲：按下→触发一次；到时(hold_ms)或松开→自动释放
-} btn_behavior_t;
-
-// ---- 单个按键配置（用户可自由组合 modifier + keycode）----
-typedef struct {
-    uint8_t  pin;       // GPIO 引脚（输入 + 内部上拉；低电平=按下）
-    uint8_t  modifier;  // 修饰键位（MOD_xxx 的 OR 组合，0=无）
-    uint8_t  keycode;   // HID 键码（0=仅修饰键）
-    uint8_t  behavior;  // BTN_HOLD / BTN_ONESHOT
-    uint16_t hold_ms;   // BTN_ONESHOT 的最长保持时间(ms)
-} btn_config_t;
-
-// PTT 键引脚（板载 LED 闪烁指示也用它）
-#define PIN_PTT 2
-
-// 用户按键表（定义在 buttons.c，按需修改/增删）
-extern const btn_config_t btn_configs[];
-extern const int          btn_config_count;
-
 // 初始化所有按键引脚（输入 + 内部上拉）
 void buttons_init(void);
 
 // 按键任务：去抖 + 触发状态机 + 汇总成一个 HID 键盘报告并上报（有变化才发）
 void buttons_task(void);
+
+// 返回当前 PTT 引脚（= keys[0].pin，可经 CONFIG 改）。
+// 供 main.c 里「PTT→busy 灯」与「板载 LED 闪烁」的本地逻辑使用，使 PTT 脚也可配。
+uint8_t buttons_ptt_pin(void);
+
+// 调试回声开关（KEYMON ON/OFF）：开启后每次按键按下/松开经 CDC 回 "KEY <槽位> DOWN/UP"，
+// 便于上位机在不接 HID 监听的情况下确认「物理按键被扫描到、对应哪个槽」。默认关。
+void buttons_set_echo(bool on);
+bool buttons_get_echo(void);
 
 #endif // BUTTONS_H

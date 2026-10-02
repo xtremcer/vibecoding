@@ -6,7 +6,10 @@
 
 #include "bsp/board_api.h"
 #include "beep.h"
+#include "buttons.h"
 #include "config.h"
+#include "flash_store.h"         // flash_store_last_err / flash_store_rwtest（A3 诊断）
+#include "hardware/watchdog.h"   // watchdog_reboot（REBOOT 命令）
 #include "state_exec.h"
 #include "status_led.h"
 #include "tusb.h"
@@ -18,6 +21,29 @@ static char     line[CDC_CMD_LINE_MAX + 1];
 static uint8_t  line_len = 0;
 static uint32_t last_rx_ms = 0;
 static uint32_t last_cmd_ms = 0;   // 最近一次收到完整指令的时刻，用于主机看门狗
+
+//--------------------------------------------------------------------+
+// CONFIG GET 大块多行回复（A2 的坑）：
+//   整份配置序列化后约 2400 字节，远超 TX FIFO（CFG_TUD_CDC_TX_BUFSIZE=1024），
+//   若一次性 tud_cdc_write 会被静默丢尾（tud_cdc_write 满时直接丢弃多余字节）。
+//   对策：先整份序列化进 RAM 缓冲，再在 cdc_cmd_task 里按
+//   tud_cdc_write_available() 逐行吞吐，非阻塞、绝不丢字节。
+//--------------------------------------------------------------------+
+#define CDC_GET_BUF_MAX 3200
+static char     get_buf[CDC_GET_BUF_MAX];
+static uint32_t get_len = 0;     // 已序列化字节数（每行以 '\n' 结尾）
+static uint32_t get_pos = 0;     // 已发出的字节数
+static bool     get_pending = false;
+
+// cfg_dump 的 emit：把每一行（不含 \r\n）以 '\n' 结尾追加进 get_buf
+static void get_emit(const char* s)
+{
+    uint32_t n = (uint32_t)strlen(s);
+    if (get_len + n + 1 > CDC_GET_BUF_MAX) return;   // 兜底，绝不越界
+    memcpy(get_buf + get_len, s, n);
+    get_len += n;
+    get_buf[get_len++] = '\n';
+}
 
 //--------------------------------------------------------------------+
 // 回显（只在主机真的打开了串口时发，否则丢弃并清空 TX FIFO）
@@ -46,6 +72,18 @@ static void cdc_reply_line(const char* s)
 }
 
 static void cdc_reply_ok(void)      { cdc_reply_line("OK"); }
+
+// 对外单行回显出口（KEYMON 调试回声经此发）：仅主机连着时才发，否则丢弃。
+void cdc_cmd_send_line(const char* s)
+{
+    if (!tud_cdc_connected()) {
+        tud_cdc_write_clear();
+        return;
+    }
+    tud_cdc_write(s, (uint32_t)strlen(s));
+    tud_cdc_write("\r\n", 2);
+    tud_cdc_write_flush();
+}
 
 // 带文字说明的错误（CONFIG SET 校验失败时把原因带回上位机，不然只能猜）
 static void cdc_reply_err_msg(uint8_t c, const char* msg)
@@ -313,15 +351,33 @@ static void cdc_handle_config(const char* payload)
 
     const char* p;
     if ((p = match_cmd(payload, "GET")) != NULL) {
-        // TX FIFO 只有 256 字节，一次回 700 字节会被静默截断 → 逐行 emit
-        cdc_reply_line("CONFIG BEGIN");
-        cfg_dump(cdc_reply_line);
-        cdc_reply_ok();
+        // 整份配置先序列进 RAM 缓冲，再由 cdc_cmd_task 逐行吐出（非阻塞、
+        // 按 tud_cdc_write_available() 节流），彻底绕开 TX FIFO 静默截尾。
+        get_len = 0;
+        get_pos = 0;
+        get_pending = true;
+        get_emit("CONFIG BEGIN");
+        cfg_dump(get_emit);
+        get_emit("OK");
         return;
     }
     if ((p = match_cmd(payload, "DEFAULT")) != NULL) {
         cfg_reset_default();
         state_exec_reapply();     // 让新默认立刻作用到当前态的灯
+        // A3：默认也落盘（删掉已改配置）。落盘失败必须报错，不能沿用旧实现静默回 OK。
+        if (!cfg_persist()) {
+            char perr[64];
+            snprintf(perr, sizeof(perr), "persist-failed lfs=%d", flash_store_last_err());
+            cdc_reply_err_msg(6, perr);
+            return;
+        }
+        cdc_reply_ok();
+        return;
+    }
+    if ((p = match_cmd(payload, "LOAD")) != NULL) {
+        // 重新从闪存读 config.json 并应用（验证落盘 / 恢复用）
+        if (!cfg_load_from_flash()) { cdc_reply_err(6); return; }
+        state_exec_reapply();
         cdc_reply_ok();
         return;
     }
@@ -335,6 +391,14 @@ static void cdc_handle_config(const char* payload)
             return;
         }
         state_exec_reapply();     // 新配置立刻作用到当前态的灯
+        // A3：改动立即落盘，掉电不丢。原实现忽略 cfg_persist 返回值，写失败仍回 OK，
+        // 把「配置根本没进闪存」完全掩盖了（CONFIG LOAD 才诚实地报 ERR 6）。现在报错。
+        if (!cfg_persist()) {
+            char perr[64];
+            snprintf(perr, sizeof(perr), "persist-failed lfs=%d", flash_store_last_err());
+            cdc_reply_err_msg(6, perr);
+            return;
+        }
         cdc_reply_ok();
         return;
     }
@@ -381,6 +445,52 @@ static void handle_line(char* raw)
     if (strcmp(w0, "SET") == 0)    { cdc_handle_set(&cur); return; }
     if (strcmp(w0, "STATE?") == 0) { cdc_handle_state_query(); return; }
 
+    // ---- 闪存状态（A3：配置落盘诊断）----
+    //   FLASH?      →  MOUNT=<0|1> LOAD=<0|1> ERR=<lfs错误码>
+    //   FLASH RWTEST →  RWTEST ERASE=<0|1> PROG=<0|1> FIRST=<hex>（原始闪存自检，
+    //                   会毁掉分区并重新格式化，仅诊断用）
+    if (strcmp(w0, "FLASH") == 0) {
+        char* arg = cdc_tok(&cur);
+        if (arg && strcmp(arg, "RWTEST") == 0) {
+            char buf[64];
+            flash_store_rwtest(buf, sizeof(buf));
+            cdc_reply_line(buf);
+            return;
+        }
+        cdc_reply_err(5);
+        return;
+    }
+    if (strcmp(w0, "FLASH?") == 0) {
+        char buf[48];
+        snprintf(buf, sizeof(buf), "MOUNT=%d LOAD=%d ERR=%d",
+                 cfg_flash_mounted() ? 1 : 0,
+                 cfg_loaded_from_flash() ? 1 : 0,
+                 flash_store_last_err());
+        cdc_reply_line(buf);
+        return;
+    }
+
+    // ---- 重启（开发用：验证掉电/重启后配置仍保留）----
+    //   先回 OK 再触发看门狗复位；主机靠串口掉线 + 重枚举检测到重启完成。
+    if (strcmp(w0, "REBOOT") == 0) {
+        cdc_reply_ok();
+        watchdog_reboot(0, 0, 0);
+        return;             // watchdog_reboot 会复位芯片，不会到这里
+    }
+
+    // ---- KEYMON：按键调试回声开关 ----
+    //   KEYMON ON  → 之后每次按键按下/松开经 CDC 回 "KEY <槽位> <pin> DOWN/UP"
+    //   KEYMON OFF → 关闭回声（默认关）
+    //   用于不接 HID 监听时确认「物理按键被扫描到、落到哪个槽、对应哪个脚」。
+    if (strcmp(w0, "KEYMON") == 0) {
+        char* arg = cdc_tok(&cur);
+        if (!arg) { cdc_reply_err(5); return; }
+        if (strcmp(arg, "ON") == 0)        { buttons_set_echo(true);  cdc_reply_ok(); return; }
+        if (strcmp(arg, "OFF") == 0)       { buttons_set_echo(false); cdc_reply_ok(); return; }
+        cdc_reply_err(5);
+        return;
+    }
+
     // 后续阶段在此追加：...
     cdc_reply_err(1);   // ERR 1 = 未知指令
 }
@@ -388,6 +498,31 @@ static void handle_line(char* raw)
 //--------------------------------------------------------------------+
 // 对外 API
 //--------------------------------------------------------------------+
+
+// 逐行把 get_buf 吐进 CDC TX FIFO；仅当 FIFO 有余量才写，绝不丢字节。
+//   每个主循环 tick 调一次：能发几行发几行，发不完留到下个 tick，自然节流。
+static void cdc_get_drain(void)
+{
+    if (!get_pending) return;
+    if (!tud_cdc_connected()) { get_pending = false; return; }   // 主机断开，放弃
+
+    bool wrote = false;
+    while (get_pos < get_len) {
+        uint32_t nl = get_pos;
+        while (nl < get_len && get_buf[nl] != '\n') nl++;
+        if (nl >= get_len) break;                 // 理论不会到（末行也带 '\n'）
+        uint32_t line_bytes = nl - get_pos;        // 不含 '\n'
+        // 一行要 line_bytes + 2（\r\n）；FIFO 装不下就等下个 tick（主机读走后腾出空间）
+        if (tud_cdc_write_available() < line_bytes + 2) break;
+        tud_cdc_write(get_buf + get_pos, line_bytes);
+        tud_cdc_write("\r\n", 2);
+        get_pos = nl + 1;                          // 跳过 '\n'
+        wrote = true;
+    }
+    if (wrote) tud_cdc_write_flush();
+    if (get_pos >= get_len) get_pending = false;   // 全部发完
+}
+
 void cdc_cmd_init(void)
 {
     line_len = 0;
@@ -406,6 +541,7 @@ void cdc_cmd_task(void)
 
     if (!tud_cdc_connected()) {
         line_len = 0;                      // 主机断开，丢弃半行
+        get_pending = false;               // 进行中的 CONFIG GET 也一并放弃
         tud_cdc_write_clear();
         return;
     }
@@ -439,4 +575,7 @@ void cdc_cmd_task(void)
             cdc_reply_err(2);
         }
     }
+
+    // CONFIG GET 的多行回复在此逐行吐出（非阻塞、按 FIFO 余量节流）
+    cdc_get_drain();
 }
